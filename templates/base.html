@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}DMC Management Suite{% endblock %}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root[data-theme="dark"] {
+            --bg-color: #0f172a;
+            --sidebar-bg: #1e293b;
+            --topbar-bg: #1e293b;
+            --card-bg: #1e293b;
+            --text-color: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --primary-color: #f32c91; /* IE Pink for dark mode */
+            --primary-hover: #e00c7e;
+            --danger-color: #ef4444;
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+        }
+
+        :root[data-theme="light"] {
+            --bg-color: #f8fafc;
+            --sidebar-bg: #ffffff;
+            --topbar-bg: #ffffff;
+            --card-bg: #ffffff;
+            --text-color: #0f172a;
+            --text-muted: #64748b;
+            --border-color: #e2e8f0;
+            --primary-color: #e00c7e; /* IE Pink */
+            --primary-hover: #bf086a;
+            --danger-color: #dc2626;
+            --success-color: #059669;
+            --warning-color: #d97706;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            transition: background-color 0.3s ease;
+        }
+
+        /* Main Content Area */
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Topbar Styles */
+        .topbar {
+            height: 65px;
+            background-color: var(--topbar-bg);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 30px;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+
+        .theme-toggle {
+            cursor: pointer;
+            color: var(--text-muted);
+            background: none;
+            border: none;
+            font-size: 20px;
+            padding: 5px;
+            transition: color 0.2s;
+        }
+        
+        .theme-toggle:hover {
+            color: var(--text-color);
+        }
+
+        /* Content Canvas */
+        .content-canvas {
+            flex-grow: 1;
+            padding: 30px;
+            overflow-y: auto;
+        }
+
+        /* Cards */
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Topbar -->
+        <header class="topbar">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <img src="{{ url_for('static', filename='ie_logo.png') }}" alt="Ikeja Electric Logo" style="height: 38px; width: auto; border-radius: 4px;">
+                <h2 style="margin:0; font-size: 22px; font-weight: 700; color: var(--primary-color);">Debt Management Suite</h2>
+            </div>
+            
+            <div style="display: flex; align-items: center;">
+                <button class="theme-toggle" id="themeToggleBtn" title="Toggle Theme">
+                    <i class="fas fa-moon"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Canvas -->
+        <main class="content-canvas">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <script>
+        // Theme Toggling Logic
+        const toggleBtn = document.getElementById('themeToggleBtn');
+        const icon = toggleBtn.querySelector('i');
+        const htmlDoc = document.documentElement;
+
+        // Check local storage for theme
+        const savedTheme = localStorage.getItem('dmc_theme') || 'dark';
+        htmlDoc.setAttribute('data-theme', savedTheme);
+        updateIcon(savedTheme);
+
+        toggleBtn.addEventListener('click', () => {
+            const currentTheme = htmlDoc.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            htmlDoc.setAttribute('data-theme', newTheme);
+            localStorage.setItem('dmc_theme', newTheme);
+            updateIcon(newTheme);
+        });
+
+        function updateIcon(theme) {
+            if(theme === 'dark') {
+                icon.className = 'fas fa-sun'; // Show sun when dark
+            } else {
+                icon.className = 'fas fa-moon'; // Show moon when light
+            }
+        }
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

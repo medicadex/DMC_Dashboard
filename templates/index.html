@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DMC Management Suite</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="main-wrapper">
+        <div class="container">
+            <img src="{{ url_for('static', filename='ie_logo.png') }}" alt="IE Logo" class="logo">
+            <h1>Welcome Qazeem Adebowale,</h1>
+            <p class="subtitle">What can I help you with today?</p>
+            <p class="time">{{ current_time }}</p>
+            
+            <div class="button-grid">
+                <a href="/upload" class="btn btn-upload">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <span>Upload Daily Records</span>
+                </a>
+                <a href="/reports" class="btn btn-reports">
+                    <i class="fas fa-file-chart-line"></i>
+                    <span>Prepare Reports</span>
+                </a>
+                <a href="/dashboard" class="btn btn-dashboard">
+                    <i class="fas fa-user-search"></i>
+                    <span>View Customer Record</span>
+                </a>
+            </div>
+            
+            <p class="prompt">Use the options above to start working</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reports - DMC</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .reports-container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 40px;
+        }
+        .sidebar {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+            height: fit-content;
+        }
+        .main-content {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        }
+        .report-option {
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+        }
+        .report-option:hover { border-color: #2196F3; background: #f0f7ff; }
+        .report-option.active { border-color: #2196F3; background: #e3f2fd; }
+        .report-option i { margin-right: 15px; font-size: 1.2em; color: #2196F3; }
+        .report-option span { font-weight: 500; }
+        
+        .preview-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .preview-table th, .preview-table td { border: 1px solid #e0e0e0; padding: 12px; text-align: left; }
+        .preview-table th { background: #f8f9fa; }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <img src="{{ url_for('static', filename='ie_logo.png') }}" alt="Logo" class="nav-logo">
+        <div class="nav-links">
+            <a href="/">Home</a>
+            <a href="/dashboard">Dashboard</a>
+            <a href="/upload">Upload</a>
+        </div>
+    </nav>
+
+    <div class="reports-container">
+        <div class="sidebar">
+            <h2>Select Report</h2>
+            <div class="report-option active">
+                <i class="fas fa-file-invoice-dollar"></i>
+                <span>Daily Collections</span>
+            </div>
+            <div class="report-option">
+                <i class="fas fa-user-times"></i>
+                <span>Disconnection List</span>
+            </div>
+            <div class="report-option">
+                <i class="fas fa-check-double"></i>
+                <span>Validation Summary</span>
+            </div>
+            <button class="btn btn-reports" style="width: 100%; margin-top: 20px;">
+                <i class="fas fa-download"></i> Download Report
+            </button>
+        </div>
+        
+        <div class="main-content">
+            <h2>Report Preview</h2>
+            <p>Select a report type from the sidebar to preview the latest data.</p>
+            <div class="table-container">
+                <table class="preview-table">
+                    <thead>
+                        <tr>
+                            <th>Account No.</th>
+                            <th>Name</th>
+                            <th>Amount</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="4" style="text-align: center; color: #999; padding: 40px;">No report selected</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

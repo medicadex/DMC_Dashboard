@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Daily Records - DMC</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .upload-card {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+            max-width: 600px;
+            margin: 40px auto;
+            text-align: center;
+        }
+        .drop-zone {
+            border: 2px dashed #e0e0e0;
+            padding: 40px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            transition: border-color 0.3s;
+            cursor: pointer;
+        }
+        .drop-zone:hover { border-color: #2196F3; }
+        .drop-zone i { font-size: 3em; color: #2196F3; margin-bottom: 10px; }
+        #file-input { display: none; }
+        .status-msg { margin-top: 20px; font-weight: 500; }
+        .success { color: #4CAF50; }
+        .error { color: #f44336; }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <img src="{{ url_for('static', filename='ie_logo.png') }}" alt="Logo" class="nav-logo">
+        <div class="nav-links">
+            <a href="/">Home</a>
+            <a href="/dashboard">Dashboard</a>
+            <a href="/reports">Reports</a>
+        </div>
+    </nav>
+
+    <div class="upload-card">
+        <h1>Upload Daily Records</h1>
+        <p>Select an Excel file to upload to the database</p>
+        
+        <form id="upload-form">
+            <div class="drop-zone" onclick="document.getElementById('file-input').click()">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <p>Click or drag file here to upload</p>
+                <input type="file" id="file-input" accept=".xlsx, .xls">
+            </div>
+            <button type="submit" class="btn btn-upload" style="width: 100%;">Process File</button>
+        </form>
+        
+        <div id="status" class="status-msg"></div>
+    </div>
+
+    <script>
+        const form = document.getElementById('upload-form');
+        const fileInput = document.getElementById('file-input');
+        const status = document.getElementById('status');
+
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            if (!fileInput.files[0]) {
+                status.innerHTML = '<span class="error">Please select a file first.</span>';
+                return;
+            }
+
+            status.innerHTML = 'Processing...';
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+                
+                if (result.error) {
+                    status.innerHTML = `<span class="error">${result.error}</span>`;
+                } else {
+                    status.innerHTML = `<span class="success">${result.message}</span>`;
+                }
+            } catch (err) {
+                status.innerHTML = '<span class="error">An error occurred during upload.</span>';
+            }
+        };
+    </script>
+</body>
+</html>

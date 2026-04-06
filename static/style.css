@@ -1,0 +1,116 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f0f2f5;
+    color: #1c1e21;
+    margin: 0;
+    min-height: 100vh;
+}
+
+.main-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+}
+
+.container {
+    text-align: center;
+    background: white;
+    padding: 60px 40px;
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+    width: 100%;
+    max-width: 800px;
+}
+
+.logo {
+    width: 120px;
+    height: auto;
+    margin-bottom: 30px;
+}
+
+h1 {
+    font-size: 2.8em;
+    font-weight: 700;
+    margin: 0;
+    color: #2196F3;
+}
+
+.subtitle {
+    font-size: 1.6em;
+    color: #4b4f56;
+    margin-top: 10px;
+}
+
+.time {
+    font-size: 1.1em;
+    color: #90949c;
+    margin-bottom: 50px;
+}
+
+.button-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 25px;
+    margin-bottom: 40px;
+}
+
+.btn {
+    text-decoration: none;
+    color: white;
+    font-size: 1.2em;
+    font-weight: 600;
+    padding: 20px;
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: none;
+    cursor: pointer;
+}
+
+.btn i {
+    font-size: 2em;
+    margin-bottom: 10px;
+}
+
+.btn:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 25px rgba(0,0,0,0.15);
+}
+
+.btn-upload { background: linear-gradient(135deg, #66bb6a, #43a047); }
+.btn-reports { background: linear-gradient(135deg, #42a5f5, #1e88e5); }
+.btn-dashboard { background: linear-gradient(135deg, #ffa726, #fb8c00); }
+
+.prompt {
+    font-size: 1em;
+    color: #90949c;
+    border-top: 1px solid #e9eaed;
+    padding-top: 25px;
+}
+
+/* Nav styles */
+.navbar {
+    background: white;
+    padding: 15px 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+}
+
+.nav-logo { height: 40px; width: auto; }
+.nav-links a {
+    text-decoration: none;
+    color: #4b4f56;
+    margin-left: 20px;
+    font-weight: 500;
+}
+.nav-links a:hover { color: #2196F3; }

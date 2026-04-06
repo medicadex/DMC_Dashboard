@@ -8,3 +8,5 @@ holidays>=0.30
 xlsxwriter>=3.1.9
 flask>=2.0.0
 gunicorn>=20.0.0
+bcrypt>=4.0.0
+cryptography>=41.0.0

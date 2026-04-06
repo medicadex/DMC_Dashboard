@@ -1,0 +1,13 @@
+# DMC Web-App Project - Change Log
+Created: 2026-04-06
+
+## Project Features (DMC Web Suite)
+- Pure web-based frontend utilizing HTML/CSS/JS (Vanilla).
+- Flask Backend REST API serving data asynchronously.
+- PyWebView wrapper for native desktop executable generation.
+- Full compatibility with existing SQLite offline-first sync architecture.
+- Dual-mode server operation: Can be run as a desktop app or hosted centrally.
+
+## Change Log
+[2026-04-06] Initialized Change Log for isolated Web-App project.
+[2026-04-06] Isolated environment: Copied original Python backend (services, repositories, utilities) into DMC_Web_Project to prevent interference with the Tkinter desktop version.

@@ -165,8 +165,8 @@
 <!-- Search Row -->
 <div class="card" style="margin-bottom: 20px; display: flex; gap: 15px; position: relative;">
     <div style="flex-grow: 1; max-width: 400px; position: relative;">
-        <input type="text" id="searchInput" class="form-control" placeholder="Search Account Number or Name..." autocomplete="off">
-        <ul id="autocompleteResults" style="display: none; position: absolute; z-index: 1000; top: 100%; left: 0; right: 0; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; margin: 5px 0 0; padding: 0; list-style: none; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+        <input type="text" id="searchInput" class="form-control" placeholder="Search Account Number, Name or Address..." autocomplete="off">
+        <ul id="autocompleteResults" style="display: none; position: absolute; z-index: 1000; top: 100%; left: 0; right: 0; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; margin: 5px 0 0; padding: 0; list-style: none; overflow-y: auto; max-height: 300px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
         </ul>
     </div>
     <button id="searchBtn" class="btn-search"><i class="fas fa-search"></i> Search</button>

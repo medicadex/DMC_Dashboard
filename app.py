@@ -43,8 +43,8 @@ def api_autocomplete():
     sql = text("""
         SELECT account_number, account_name, account_address
         FROM customers
-        WHERE account_number LIKE :q OR account_name LIKE :q 
-        LIMIT 10
+        WHERE account_number LIKE :q OR account_name LIKE :q OR account_address LIKE :q
+        LIMIT 30
     """)
     
     with engine.connect() as conn:

@@ -139,6 +139,7 @@ def get_db_engine(db_pass=None, include_db=True):
 
     db_host = os.getenv("DB_HOST", "100.24.75.156")
     db_port = os.getenv("DB_PORT", "3306")
+    db_ssl_ca = os.getenv("DB_SSL_CA")
 
     from urllib.parse import quote_plus
     encoded_pw = quote_plus(str(db_pass)) if db_pass else ""
@@ -150,10 +151,22 @@ def get_db_engine(db_pass=None, include_db=True):
     
     # Using NullPool to bypass connection pooling issues that were causing hangs
     from sqlalchemy.pool import NullPool
+    
+    connect_args = {'connect_timeout': 10}
+    if db_ssl_ca:
+        ca_path = db_ssl_ca
+        if not os.path.isabs(ca_path):
+            ca_path = os.path.join(get_project_folder(), ca_path)
+            
+        if os.path.exists(ca_path):
+            connect_args['ssl'] = {'ca': ca_path}
+        else:
+            print(f"[WARNING] SSL CA file not found at: {ca_path}")
+
     return create_engine(
         conn_str,
         poolclass=NullPool,
-        connect_args={'connect_timeout': 10}
+        connect_args=connect_args
     )
 
 def get_project_folder():

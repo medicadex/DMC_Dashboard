@@ -1,166 +1,8 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - DMC Web Suite{% endblock %}
 {% block page_title %}Account Dashboard{% endblock %}
 
-{% block head %}
-<!-- Chart.js for beautiful modern graphs -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<style>
-    .kpi-container {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: 20px;
-        margin-bottom: 30px;
-    }
-
-    .kpi-card {
-        background-color: var(--card-bg);
-        border: 1px solid var(--border-color);
-        border-radius: 12px;
-        padding: 24px;
-        display: flex;
-        flex-direction: column;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        transition: transform 0.2s;
-    }
-
-    .kpi-title {
-        color: var(--text-muted);
-        font-size: 14px;
-        font-weight: 600;
-        text-transform: uppercase;
-        margin-bottom: 10px;
-    }
-
-    .kpi-value {
-        font-size: 28px;
-        font-weight: 700;
-        color: var(--text-color);
-    }
-
-    .form-control {
-        width: 100%;
-        padding: 12px 15px;
-        background-color: var(--input-bg);
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        color: var(--text-color);
-        font-size: 15px;
-    }
-
-    .btn-search {
-        background-color: var(--primary-color);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 0 25px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: background 0.2s;
-    }
-    .btn-search:hover { background-color: var(--primary-hover); }
-
-    .legacy-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 15px;
-        margin-top: 20px;
-    }
-
-    .col-card {
-        background: var(--card-bg);
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-
-    .col-header {
-        background: rgba(59, 130, 246, 0.1);
-        color: var(--primary-color);
-        border-bottom: 1px solid rgba(59, 130, 246, 0.2);
-        padding: 12px;
-        font-weight: 700;
-        font-size: 13px;
-        text-transform: uppercase;
-    }
-
-    .col-body {
-        padding: 12px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        font-size: 13px;
-    }
-
-    .info-row {
-        background: rgba(0,0,0,0.02);
-        border: 1px solid var(--border-color);
-        padding: 8px;
-        border-radius: 6px;
-    }
-
-    .info-row span.label {
-        display: block;
-        color: var(--text-muted);
-        font-size: 11px;
-        margin-bottom: 2px;
-    }
-
-    .info-row span.val {
-        display: block;
-        font-weight: 600;
-        color: var(--text-color);
-        word-break: break-all;
-    }
-
-    /* Table styles for Payment Listing */
-    .table-container {
-        max-height: 400px;
-        overflow-y: auto;
-    }
-
-    table.payment-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 12px;
-    }
-
-    table.payment-table th {
-        background: var(--sidebar-bg);
-        color: var(--text-muted);
-        padding: 8px;
-        text-align: left;
-        position: sticky;
-        top: 0;
-    }
-
-    table.payment-table td {
-        padding: 8px;
-        border-bottom: 1px solid var(--border-color);
-        color: var(--text-color);
-    }
-
-    .outstanding-box {
-        background: rgba(239, 68, 68, 0.1);
-        border: 1px solid var(--danger-color);
-        padding: 10px;
-        border-radius: 6px;
-        margin-top: 10px;
-    }
-    .outstanding-box span.val {
-        color: var(--danger-color);
-        font-size: 16px !important;
-    }
-
-</style>
-{% endblock %}
-
 {% block content %}
-
-<!-- Metrics Row Removed -->
 
 <!-- Search Row -->
 <div class="card" style="margin-bottom: 20px; display: flex; gap: 15px; position: relative;">
@@ -173,92 +15,227 @@
 </div>
 
 <div id="loadingIndicator" style="display: none; text-align: center; padding: 40px; color: var(--primary-color);">
-    <i class="fas fa-circle-notch fa-spin fa-2x"></i>
-    <div style="margin-top: 10px; font-weight: 600;">Fetching Financial Details accurately...</div>
+    <i class="fas fa-spinner fa-spin fa-3x"></i>
+    <p style="margin-top: 15px; font-weight: 500;">Fetching Account Details...</p>
 </div>
 
-<!-- Results Area -->
+<!-- Results Wrapper -->
 <div id="resultsArea" style="display: none;">
-    <!-- Account Header -->
-    <div class="card" style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
-        <div>
-            <h2 id="hdrName" style="margin: 0; color: var(--text-color);">--</h2>
-        </div>
-        <div style="display: flex; gap: 20px; font-size: 14px; background: rgba(59, 130, 246, 0.1); padding: 10px 20px; border-radius: 8px; border: 1px solid var(--primary-color);">
-            <div><span style="color: var(--text-muted)">BU:</span> <strong id="hdrBU">--</strong></div>
-            <div><span style="color: var(--text-muted)">Undertaking:</span> <strong id="hdrUT">--</strong></div>
-            <div><span style="color: var(--text-muted)">Officer:</span> <strong id="hdrOff">--</strong></div>
-        </div>
-    </div>
-
-    <!-- The 5 Columns -->
-    <div class="legacy-grid">
+    
+    <!-- Unified Main Card Wrapper (Matches User Design) -->
+    <div class="card" style="padding: 25px;">
         
-        <!-- Col 1: Demographic -->
-        <div class="col-card">
-            <div class="col-header">Demographic Info</div>
-            <div class="col-body" id="col1">
-                <!-- Data injected via JS -->
+        <!-- Header Row (Name + Banner) -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; flex-wrap: wrap; gap: 15px;">
+            <h2 id="customerNameHeader" style="margin: 0; font-size: 24px; font-weight: 800; color: var(--text-color);">--</h2>
+            
+            <!-- BU, Undertaking, Officer Banner -->
+            <div id="topBanner" style="background: var(--bg-color); border: 1px solid var(--primary-color); border-radius: 8px; padding: 10px 20px; display: flex; gap: 20px; font-weight: 500; color: var(--text-color); font-size: 13px;">
+                <div><span style="color: var(--text-muted); font-size: 11px;">BU:</span> <span id="bannerBU" style="font-weight: 700;">--</span></div>
+                <div><span style="color: var(--text-muted); font-size: 11px;">Undertaking:</span> <span id="bannerUT" style="font-weight: 700;">--</span></div>
+                <div><span style="color: var(--text-muted); font-size: 11px;">Officer:</span> <span id="bannerOfficer" style="font-weight: 700;">--</span></div>
             </div>
         </div>
 
-        <!-- Col 2: Debt Profile -->
-        <div class="col-card">
-            <div class="col-header" style="color: #ef4444; background: rgba(239, 68, 68, 0.1);">Debt Profile</div>
-            <div class="col-body" id="col2">
-                <!-- Data injected via JS -->
-            </div>
-        </div>
-
-        <!-- Col 3: Validation Details -->
-        <div class="col-card">
-            <div class="col-header">Validation Details</div>
-            <div class="col-body" id="col3">
-                <!-- Data injected via JS -->
-            </div>
-        </div>
-
-        <!-- Col 4: Resolution / Migration -->
-        <div class="col-card">
-            <div class="col-header">Resolution / Migration</div>
-            <div class="col-body" id="col4">
-                <!-- Data injected via JS -->
-            </div>
-        </div>
-
-        <!-- Col 5: Payment Listing -->
-        <div class="col-card" style="grid-column: span 1; min-width: 250px;">
-            <div class="col-header">Payment Listing</div>
-            <div class="col-body" style="padding: 0;">
-                <div class="table-container">
-                    <table class="payment-table">
-                        <thead>
-                            <tr>
-                                <th>DateOfPayment</th>
-                                <th>Sum of AmountPaid</th>
-                            </tr>
-                        </thead>
-                        <tbody id="paymentTbody">
-                            <!-- Rows injected -->
-                        </tbody>
-                    </table>
-                </div>
-                <div id="totalPaymentLabel" style="background: var(--sidebar-bg); padding: 12px; font-weight: bold; border-top: 1px solid var(--border-color); font-size: 14px;">
-                    Total: ₦0.00
+        <!-- 5 Columns Grid -->
+        <div class="grid-5-col">
+            
+            <!-- Col 1: Demographic -->
+            <div class="col-card">
+                <div class="col-header">DEMOGRAPHIC INFO</div>
+                <div class="col-body" id="col1">
+                    <!-- Data injected via JS -->
                 </div>
             </div>
-        </div>
 
+            <!-- Col 2: Debt Profile -->
+            <div class="col-card">
+                <div class="col-header" style="background: rgba(239, 68, 68, 0.08); color: #ef4444;">DEBT PROFILE</div>
+                <div class="col-body" id="col2">
+                    <!-- Data injected via JS -->
+                </div>
+            </div>
+
+            <!-- Col 3: Validation Details -->
+            <div class="col-card">
+                <div class="col-header">VALIDATION DETAILS</div>
+                <div class="col-body" id="col3">
+                    <!-- Data injected via JS -->
+                </div>
+            </div>
+
+            <!-- Col 4: Resolution/Migration -->
+            <div class="col-card">
+                <div class="col-header">RESOLUTION / MIGRATION</div>
+                <div class="col-body" id="col4">
+                    <!-- Data injected via JS -->
+                </div>
+            </div>
+
+            <!-- Col 5: Payment Listing -->
+            <div class="col-card">
+                <div class="col-header">PAYMENT LISTING</div>
+                <div class="col-body" id="col5">
+                    <!-- Data injected via JS -->
+                </div>
+            </div>
+            
+        </div>
     </div>
 </div>
 
 {% endblock %}
 
+{% block head %}
+<style>
+    .form-control {
+        width: 100%;
+        padding: 12px 15px;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        font-size: 14px;
+        font-family: inherit;
+        outline: none;
+        transition: border-color 0.2s;
+    }
+
+    .form-control:focus {
+        border-color: var(--primary-color);
+    }
+
+    .btn-search {
+        background-color: var(--primary-color);
+        color: white;
+        border: none;
+        padding: 0 25px;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+
+    .btn-search:hover {
+        background-color: var(--primary-hover);
+    }
+
+    .grid-5-col {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 15px;
+        align-items: start;
+    }
+
+    .col-card {
+        background: transparent;
+        border: none;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .col-header {
+        background: rgba(224, 12, 126, 0.05); /* very light pink */
+        padding: 12px 15px;
+        font-weight: 800;
+        font-size: 11px;
+        border-radius: 6px;
+        margin-bottom: 15px;
+        color: var(--primary-color);
+        text-transform: uppercase;
+    }
+
+    .col-body {
+        padding: 0;
+        flex-grow: 1;
+        font-size: 13px;
+        height: 550px;
+        overflow-y: auto;
+        padding-right: 5px; /* space for scrollbar */
+    }
+
+    /* Custom scrollbar for columns */
+    .col-body::-webkit-scrollbar {
+        width: 4px;
+    }
+    .col-body::-webkit-scrollbar-thumb {
+        background: var(--border-color);
+        border-radius: 10px;
+    }
+    .col-body::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    /* Target UI: Individual Cards for Rows */
+    .info-row {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 10px 12px;
+        margin-bottom: 12px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03); /* subtle elevation */
+    }
+
+    .info-row .label {
+        display: block;
+        color: var(--text-muted);
+        font-weight: 500;
+        margin-bottom: 4px;
+        font-size: 10px;
+        text-transform: capitalize;
+    }
+
+    .info-row .val {
+        display: block;
+        color: var(--text-color);
+        font-weight: 700;
+        word-break: break-word;
+        font-size: 12px;
+    }
+
+    /* Outstanding Box Custom Style */
+    .outstanding-box {
+        border-color: rgba(239, 68, 68, 0.4) !important;
+        background: rgba(239, 68, 68, 0.05) !important;
+    }
+
+    .outstanding-box .label, .outstanding-box .val {
+        color: #ef4444;
+    }
+
+    :root[data-theme="dark"] .outstanding-box {
+        background: rgba(239, 68, 68, 0.1) !important;
+        border-color: rgba(239, 68, 68, 0.6) !important;
+    }
+
+    /* Table for payments */
+    .payment-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .payment-table th {
+        text-align: left;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--primary-color);
+        font-size: 11px;
+        font-weight: 700;
+    }
+
+    .payment-table td {
+        padding: 12px 0;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 12px;
+    }
+</style>
+{% endblock %}
+
 {% block scripts %}
 <script>
-    const formatNaira = (amount) => {
-        if(amount === null || amount === undefined) return "₦0.00";
-        return "₦" + parseFloat(amount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const formatCurrency = (val) => {
+        if(!val && val !== 0) return '--';
+        return '₦' + parseFloat(val).toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     };
 
     const makeRow = (label, val, highlight=false, customHtml=null) => {
@@ -330,138 +307,148 @@
     });
 
     document.getElementById('searchBtn').addEventListener('click', async () => {
-        const acc = document.getElementById('searchInput').value.trim();
-        if(!acc) return;
+        const accNum = document.getElementById('searchInput').value.trim();
+        if(!accNum) return alert('Please enter an account number');
 
         document.getElementById('resultsArea').style.display = 'none';
         document.getElementById('loadingIndicator').style.display = 'block';
+        document.getElementById('searchBtn').disabled = true;
 
         try {
-            const btn = document.getElementById('searchBtn');
-            btn.disabled = true;
-
-            const res = await fetch(`/api/account_dashboard/${acc}`);
+            const res = await fetch(`/api/account_dashboard/${accNum}`);
             const data = await res.json();
-
-            document.getElementById('loadingIndicator').style.display = 'none';
-            btn.disabled = false;
 
             if(!res.ok) {
                 alert(data.error || "Account not found!");
+                document.getElementById('loadingIndicator').style.display = 'none';
+                document.getElementById('searchBtn').disabled = false;
                 return;
             }
 
-            renderDashboard(data);
-        } catch(err) {
+            const acc = data.account;
+            const fin = data.financials;
+            const history = data.history || [];
+            const val = data.validation || {};
+            const resData = data.resolution || {};
+
+            // Populate Top Banner Header
+            document.getElementById('customerNameHeader').innerText = (acc.account_name || 'UNKNOWN ACCOUNT').toUpperCase();
+            document.getElementById('bannerBU').innerText = acc.business_unit || '--';
+            document.getElementById('bannerUT').innerText = acc.undertaking || '--';
+            document.getElementById('bannerOfficer').innerText = acc.account_officer || '--';
+
+            // Col 1 Demographic
+            document.getElementById('col1').innerHTML = `
+                ${makeRow('Batch', acc.batch)}
+                ${makeRow('Service Address', acc.account_address)}
+                ${makeRow('DT Name', acc.dt_name)}
+                ${makeRow('Feeder Band', acc.feeder)}
+                ${makeRow('Status at Deactivation', acc.customer_status)}
+                ${makeRow('Last Payment Amount', formatCurrency(acc.last_pay_amt_pre_deactivation))}
+                ${makeRow('LPY', acc.last_pay_date_pre_deactivation)}
+            `;
+
+            // Col 2 Debt Profile
+            let discountHtml = '';
+            if(fin.discounts && fin.discounts.length > 0) {
+                let itemsHtml = fin.discounts.map(d => `<div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 5px;">
+                        <span>${d.date}</span>
+                        <span style="color: var(--success-color);">${formatCurrency(d.amount)}</span>
+                    </div>`).join('');
+                discountHtml = `<div class="info-row"><span class="label">Discounts</span><span class="val">${itemsHtml}</span></div>`;
+            } else {
+                discountHtml = `<div class="info-row"><span class="label">Discounts</span><span class="val" style="color:var(--text-muted); font-weight: normal; font-style: italic;">No discounts</span></div>`;
+            }
+
+            let adjHtml = '';
+            if(fin.adjustments && fin.adjustments.length > 0) {
+                let itemsHtml = fin.adjustments.map(d => `<div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 5px;">
+                        <span>${d.date}</span>
+                        <span style="color: var(--primary-color);">${formatCurrency(d.amount)}</span>
+                    </div>`).join('');
+                adjHtml = `<div class="info-row"><span class="label">Adjustments</span><span class="val">${itemsHtml}</span></div>`;
+            } else {
+                 adjHtml = `<div class="info-row"><span class="label">Adjustments</span><span class="val" style="color:var(--text-muted); font-weight: normal; font-style: italic;">No adjustments</span></div>`;
+            }
+            
+            const paymentPlanColor = fin.payment_plan === 'Yes' ? 'var(--success-color)' : 'var(--danger-color)';
+
+            document.getElementById('col2').innerHTML = `
+                ${makeRow('Total Debt', formatCurrency(fin.total_debt))}
+                ${makeRow('POS Payment', formatCurrency(fin.pos_payments))}
+                ${makeRow('Last Payment Date', history.length > 0 ? history[0].date : '--')}
+                ${makeRow('Other Payments', formatCurrency(fin.other_payments))}
+                ${discountHtml}
+                ${adjHtml}
+                ${makeRow('Outstanding Debt', formatCurrency(fin.outstanding_balance), true)}
+                ${makeRow('Payment Plan', `<span style="color: ${paymentPlanColor}; font-size: 13px; font-weight:900;">${fin.payment_plan || '--'}</span>`)}
+            `;
+
+            // Col 3 Validation
+            document.getElementById('col3').innerHTML = `
+                ${makeRow('Physical Status', val.physical_status)}
+                ${makeRow('Reason For Non Payment', val.reason_for_non_payment)}
+                ${makeRow('Phone Number', val.phone_number)}
+                ${makeRow('Email', val.customer_email)}
+                ${makeRow('Validated By', val.dmo)}
+                ${makeRow('Date Validated', val.validation_date)}
+            `;
+
+            // Col 4 Resolution
+            document.getElementById('col4').innerHTML = `
+                ${makeRow('Resolution', resData.resolution)}
+                ${makeRow('Action Taken', resData.outcome_of_actions_taken)}
+                ${makeRow('Other Info', resData.new_resolution)}
+                ${makeRow('Cleared For Migration', '--')}
+                ${makeRow('Migration Type', '--')}
+                ${makeRow('Meter No. (If available)', resData.ppm_no)}
+                ${makeRow('New account', resData.sr_number)}
+            `;
+
+            // Col 5 Payments
+            let payRows = history.map(h => {
+                return `<tr>
+                    <td style="font-size: 11px; padding-right: 15px;">${h.date}</td>
+                    <td style="font-weight: 700; color: var(--primary-color);">${formatCurrency(h.amount)} <br><span style="font-size: 10px; color: var(--text-muted); font-weight: normal;">(${h.source || 'collection'})</span></td>
+                </tr>`;
+            }).join('');
+
+            if(history.length === 0) {
+                payRows = `<tr><td colspan="2" style="text-align:center; padding: 20px;">No payments found.</td></tr>`;
+            }
+
+            let totalPayment = history.reduce((sum, h) => sum + parseFloat(h.amount || 0), 0);
+
+            document.getElementById('col5').innerHTML = `
+                <div style="background: transparent; border: none;">
+                    <table class="payment-table">
+                        <thead>
+                            <tr>
+                                <th>DateOfPayment</th>
+                                <th>Sum of AmountPaid</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${payRows}
+                        </tbody>
+                    </table>
+                </div>
+                <!-- Total Row -->
+                <div class="info-row" style="margin-top: 15px; background: transparent; border: none; box-shadow: none; border-top: 1px solid var(--border-color); border-radius: 0; padding: 15px 0;">
+                    <span style="font-size: 14px; font-weight: 800; color: var(--text-color);">Total: ${formatCurrency(totalPayment)}</span>
+                </div>
+            `;
+
             document.getElementById('loadingIndicator').style.display = 'none';
-            document.getElementById('searchBtn').disabled = false;
+            document.getElementById('resultsArea').style.display = 'block';
+            
+        } catch(err) {
+            console.error(err);
+            document.getElementById('loadingIndicator').style.display = 'none';
             alert("Connection error fetching account details.");
         }
+
+        document.getElementById('searchBtn').disabled = false;
     });
-
-    function renderDashboard(data) {
-        document.getElementById('resultsArea').style.display = 'block';
-        const acc = data.account || {};
-        const fin = data.financials || {};
-        const val = data.validation || {};
-        const res = data.resolution || {};
-        const hist = data.history || [];
-
-        // Header
-        document.getElementById('hdrName').textContent = (acc.account_name || 'Unknown').toUpperCase();
-        document.getElementById('hdrBU').textContent = acc.business_unit || '--';
-        document.getElementById('hdrUT').textContent = acc.undertaking || '--';
-        document.getElementById('hdrOff').textContent = acc.account_officer || '--';
-
-        // Col 1 Demographic
-        document.getElementById('col1').innerHTML = `
-            ${makeRow('Batch', acc.batch)}
-            ${makeRow('Service Address', acc.account_address)}
-            ${makeRow('DT Name', acc.dt_name)}
-            ${makeRow('Feeder Band', acc.feeder)}
-            ${makeRow('Status at Deactivation', acc.customer_status)}
-            ${makeRow('Last Payment Amount', formatNaira(acc.last_pay_amt_pre_deactivation))}
-            ${makeRow('LPY', acc.last_pay_date_pre_deactivation)}
-        `;
-
-        // Col 2 Debt Profile
-        let htmlCol2 = `
-            ${makeRow('Total Debt', formatNaira(fin.total_debt))}
-            ${makeRow('POS Payment', formatNaira(fin.pos_payments))}
-            ${makeRow('Last Payment Date', hist.length > 0 ? hist[0].date : '--')}
-            ${makeRow('Other Payments', formatNaira(fin.other_payments))}
-        `;
-
-        // Add Transactions (Discounts / Adjustments) visually showing approval statuses
-        let discHtml = `<span class="label" style="font-weight:bold; color:var(--text-color);">Discounts</span>`;
-        if(!fin.discounts || fin.discounts.length === 0) discHtml += `<span style="color:var(--text-muted);font-style:italic;">No discounts</span>`;
-        if(fin.discounts) {
-            fin.discounts.forEach(d => {
-                let color = d.status==='valid'?'#10b981':(d.status==='pending'?'#f59e0b':'#ef4444');
-                discHtml += `<div style="padding: 4px 0; border-top: 1px dashed var(--border-color); margin-top:4px;">
-                    <span style="color:${color};font-weight:600;">${formatNaira(d.amount)}</span> 
-                    <span style="font-size:10px;">(${d.status}) - ${d.approver}</span>
-                </div>`;
-            });
-        }
-        htmlCol2 += makeRow('', '', false, discHtml);
-
-        let adjHtml = `<span class="label" style="font-weight:bold; color:var(--text-color);">Adjustments</span>`;
-        if(!fin.adjustments || fin.adjustments.length === 0) adjHtml += `<span style="color:var(--text-muted);font-style:italic;">No adjustments</span>`;
-        if(fin.adjustments) {
-            fin.adjustments.forEach(d => {
-                let color = d.status==='valid'?'#10b981':(d.status==='pending'?'#f59e0b':'#ef4444');
-                adjHtml += `<div style="padding: 4px 0; border-top: 1px dashed var(--border-color); margin-top:4px;">
-                    <span style="color:${color};font-weight:600;">${formatNaira(d.amount)}</span> 
-                    <span style="font-size:10px;">(${d.status}) - ${d.approver}</span>
-                </div>`;
-            });
-        }
-        htmlCol2 += makeRow('', '', false, adjHtml);
-
-        // Highlight Outstanding
-        htmlCol2 += makeRow('Outstanding Debt', formatNaira(fin.outstanding_balance), true);
-
-        let ppColor = fin.payment_plan === 'Yes' ? 'color: var(--success-color)' : 'color: var(--danger-color)';
-        htmlCol2 += makeRow('Payment Plan', `<span style="${ppColor}">${fin.payment_plan || 'No'}</span>`, false, `
-            <span class="label">Payment Plan</span>
-            <span class="val" style="${ppColor}">${fin.payment_plan || 'No'}</span>
-        `);
-        document.getElementById('col2').innerHTML = htmlCol2;
-
-        // Col 3 Validation
-        document.getElementById('col3').innerHTML = `
-            ${makeRow('Physical Status', val.physical_status)}
-            ${makeRow('Reason For Non Payment', val.reason_for_non_payment)}
-            ${makeRow('Phone Number', val.phone_number)}
-            ${makeRow('Email', val.customer_email)}
-            ${makeRow('Validated By', val.dmo)}
-            ${makeRow('Date Validated', val.validation_date)}
-        `;
-
-        // Col 4 Resolution
-        document.getElementById('col4').innerHTML = `
-            ${makeRow('Resolution', res.resolution)}
-            ${makeRow('Action Taken', res.outcome_of_actions_taken)}
-            ${makeRow('Other Info', res.new_resolution)}
-            ${makeRow('Cleared For Migration', '--')}
-            ${makeRow('Migration Type', '--')}
-            ${makeRow('Meter No. (If available)', res.ppm_no)}
-            ${makeRow('New account', res.sr_number)}
-        `;
-
-        // Col 5 Payment Listing
-        const tbody = document.getElementById('paymentTbody');
-        tbody.innerHTML = '';
-        hist.forEach(h => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${h.date}</td>
-                <td><strong style="color: var(--primary-color)">${formatNaira(h.amount)}</strong> (${h.source || 'POS'})</td>
-            `;
-            tbody.appendChild(tr);
-        });
-        document.getElementById('totalPaymentLabel').textContent = `Total: ${formatNaira(fin.total_payments)}`;
-    }
 </script>
 {% endblock %}

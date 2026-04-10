@@ -371,7 +371,16 @@
                  adjHtml = `<div class="info-row"><span class="label">Adjustments</span><span class="val" style="color:var(--text-muted); font-weight: normal; font-style: italic;">No adjustments</span></div>`;
             }
             
-            const paymentPlanColor = fin.payment_plan === 'Yes' ? 'var(--success-color)' : 'var(--danger-color)';
+            // Payment Plan Logic 
+            const ppActive = fin.payment_plan === 'Yes';
+            const ppStatus = fin.payment_plan_status || 'No Plan';
+            
+            let statusStyle = 'color: var(--text-muted); font-weight: normal;';
+            if (ppStatus === 'Active') {
+                statusStyle = 'color: #10b981; font-weight: bold;'; // Green
+            } else if (ppStatus === 'Defaulted') {
+                statusStyle = 'color: #ef4444; font-weight: 900;'; // Red + Extra Bold
+            }
 
             document.getElementById('col2').innerHTML = `
                 ${makeRow('Total Debt', formatCurrency(fin.total_debt))}
@@ -381,7 +390,8 @@
                 ${discountHtml}
                 ${adjHtml}
                 ${makeRow('Outstanding Debt', formatCurrency(fin.outstanding_balance), true)}
-                ${makeRow('Payment Plan', `<span style="color: ${paymentPlanColor}; font-size: 13px; font-weight:900;">${fin.payment_plan || '--'}</span>`)}
+                ${makeRow('Payment Plan Status', `<span style="${statusStyle}">${ppStatus.toUpperCase()}</span>`)}
+                ${makeRow('Active Payment Plan?', `<span style="font-weight:700;">${fin.payment_plan || 'No'}</span>`)}
             `;
 
             // Col 3 Validation

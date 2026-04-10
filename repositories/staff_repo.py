@@ -17,8 +17,25 @@ class StaffRepository:
         """Decrypts sensitive fields if reading from local database."""
         if not row: return None
         
-        # SQLAlchemy Row objects are immutable, so we create a dict
-        data = dict(row._mapping)
+        # SQLAlchemy 2.0 Row objects have a _mapping property, while 1.4/LegacyRow also support it.
+        # Dictionaries do not. We need a robust way to convert to dict.
+        if isinstance(row, dict):
+            data = row.copy()
+        elif hasattr(row, '_mapping'):
+            data = dict(row._mapping)
+        else:
+            # Fallback for older SQLAlchemy or cases where _mapping is missing
+            try:
+                data = dict(row)
+            except (TypeError, ValueError):
+                # Final fallback for custom row objects or tuple-like objects
+                try:
+                    # In some SQLAlchemy versions, row.keys() returns column names
+                    keys = row.keys()
+                    data = {k: row[i] for i, k in enumerate(keys)}
+                except:
+                    # If all else fails, return as is (but this might cause issues downstream)
+                    return row
         
         # Only decrypt if we are currently offline (or if the data looks encrypted)
         # For simplicity, we always try to decrypt email and phone_number

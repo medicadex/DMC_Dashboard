@@ -25,7 +25,8 @@ class AuthService:
         # Offline Grace Period Enforcement
         if not is_online():
             # Check if user has last_online_login
-            last_login = user.get('last_online_login')
+            # Row objects in SQLAlchemy 2.0 don't have .get() - use mapping access
+            last_login = user.get('last_online_login') if isinstance(user, dict) else (user._mapping.get('last_online_login') if hasattr(user, '_mapping') else user['last_online_login'])
             if not last_login:
                 raise Exception("Offline login not permitted. Please log in online first to authorize this device.")
             
@@ -38,7 +39,8 @@ class AuthService:
                 raise Exception(f"Offline access expired (Limit: {self.OFFLINE_GRACE_DAYS} days). Please connect to the internet to re-authorize.")
 
         # Check if password is bcrypt hashed or plain (for migration)
-        stored_pwd = user.get('password_hash')
+        # Using mapping-style access for Row/Dict compatibility
+        stored_pwd = user.get('password_hash') if isinstance(user, dict) else (user._mapping.get('password_hash') if hasattr(user, '_mapping') else user['password_hash'])
         is_valid = False
         
         try:
@@ -63,11 +65,14 @@ class AuthService:
             self.session.reset_login_attempts(username)
             self.session.update_activity()
             self.repo.log_activity(username, "LOGIN_SUCCESS", event_type='MAJOR')
+            
+            # Use mapping access to build user dict
+            u_mapping = user if isinstance(user, dict) else (user._mapping if hasattr(user, '_mapping') else user)
             return {
-                "id": user.get('id'),
-                "username": user.get('username'),
-                "full_name": user.get('full_name'),
-                "role": user.get('role')
+                "id": u_mapping.get('id') if hasattr(u_mapping, 'get') else u_mapping['id'],
+                "username": u_mapping.get('username') if hasattr(u_mapping, 'get') else u_mapping['username'],
+                "full_name": u_mapping.get('full_name') if hasattr(u_mapping, 'get') else u_mapping['full_name'],
+                "role": u_mapping.get('role') if hasattr(u_mapping, 'get') else u_mapping['role']
             }
         else:
             self.session.track_login_attempt(username)

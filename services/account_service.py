@@ -39,9 +39,11 @@ class AccountService:
             oth_res = conn.execute(text("SELECT SUM(amount_paid) FROM other_payments WHERE account_number = :acc"), {"acc": acc_num}).scalar()
             fin_dict['other_payments'] = float(oth_res) if oth_res else 0.0
 
-            # Total Payments (For Payment Plan/Debt logic)
-            p_res = conn.execute(text("SELECT SUM(amount_paid) FROM all_payments WHERE account_number = :acc"), {"acc": acc_num}).scalar()
-            fin_dict['total_payments'] = float(p_res) if p_res else 0.0
+            # 2. Payments (all_payments table)
+            # Fetch total payments and last payment date
+            p_res = conn.execute(text("SELECT SUM(amount_paid), MAX(date_of_payment) FROM all_payments WHERE account_number = :acc"), {"acc": acc_num}).fetchone()
+            fin_dict['total_payments'] = float(p_res[0]) if p_res[0] else 0.0
+            fin_dict['last_payment_date'] = p_res[1] # datetime or None
             
             # Discounts - Detailed Fetching (Legacy Logic)
             d_all = conn.execute(text("SELECT status, discounted_amount, user_who_approved FROM discounts WHERE account_number = :acc"), {"acc": acc_num}).fetchall()
@@ -93,8 +95,27 @@ class AccountService:
             # Payment Plan logic (30% rule)
             if (fin_dict['total_payments'] >= 0.3 * fin_dict['total_debt']) and (fin_dict['outstanding_balance'] > 0):
                 fin_dict['payment_plan'] = 'Yes'
+                
+                # Payment Plan Status (Active/Defaulted)
+                last_pay = fin_dict.get('last_payment_date')
+                if not last_pay:
+                    fin_dict['payment_plan_status'] = "Defaulted"
+                else:
+                    # Parse if string (SQLite) or use directly if datetime (MySQL)
+                    if isinstance(last_pay, str):
+                        try: last_pay = datetime.strptime(last_pay[:19], '%Y-%m-%d %H:%M:%S')
+                        except: last_pay = None
+                    
+                    if not last_pay:
+                        fin_dict['payment_plan_status'] = "Defaulted"
+                    else:
+                        # Normalize both to date objects to avoid "datetime.datetime vs datetime.date" error
+                        last_pay_date = last_pay.date() if isinstance(last_pay, datetime) else last_pay
+                        diff = (datetime.now().date() - last_pay_date).days
+                        fin_dict['payment_plan_status'] = "Active" if diff <= 30 else "Defaulted"
             else:
                 fin_dict['payment_plan'] = 'No'
+                fin_dict['payment_plan_status'] = "No Plan"
             
             # 3. Fetch Validation Details
             val = conn.execute(text("SELECT * FROM validation WHERE account_number = :acc ORDER BY validation_date DESC LIMIT 1"), {"acc": acc_num}).fetchone()

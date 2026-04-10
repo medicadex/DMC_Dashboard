@@ -3,7 +3,6 @@ sqlalchemy>=2.0.0
 pymysql>=1.0.0
 python-dotenv>=1.0.0
 openpyxl>=3.1.0
-tk
 holidays>=0.30
 xlsxwriter>=3.1.9
 flask>=2.0.0

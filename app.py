@@ -33,6 +33,14 @@ def favicon():
 def dashboard():
     return render_template('dashboard.html')
 
+@app.route('/manifest.json')
+def serve_manifest():
+    return send_from_directory(os.path.join(app.root_path, 'static'), 'manifest.json')
+
+@app.route('/service-worker.js')
+def serve_sw():
+    return send_from_directory(os.path.join(app.root_path, 'static'), 'service-worker.js')
+
 @app.route('/api/autocomplete')
 def api_autocomplete():
     query = request.args.get('q', '').strip()

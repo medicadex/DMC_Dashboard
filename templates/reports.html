@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reports - DMC</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ version }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         .reports-container {
@@ -50,7 +50,7 @@
 </head>
 <body>
     <nav class="navbar">
-        <img src="{{ url_for('static', filename='ie_logo.png') }}" alt="Logo" class="nav-logo">
+        <img src="{{ url_for('static', filename='ie_logo.png') }}?v={{ version }}" alt="Logo" class="nav-logo">
         <div class="nav-links">
             <a href="/">Home</a>
             <a href="/dashboard">Dashboard</a>

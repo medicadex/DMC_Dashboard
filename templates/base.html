@@ -8,11 +8,11 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <!-- PWA Manifest & Theme -->
-    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}?v={{ version }}">
     <meta name="theme-color" content="#f32c91">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="apple-touch-icon" href="{{ url_for('static', filename='ie_logo.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='ie_logo.png') }}?v={{ version }}">
     
     <style>
         :root[data-theme="dark"] {
@@ -250,9 +250,13 @@
             </div>
 
             <nav class="nav-links">
+                <a href="{{ url_for('index') }}" class="nav-item {% if active_page == 'home' %}active{% endif %}">
+                    <i class="fas fa-home"></i>
+                    <span>Homepage</span>
+                </a>
                 <a href="{{ url_for('dashboard') }}" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
-                    <i class="fas fa-chart-pie"></i>
-                    <span>Dashboard</span>
+                    <i class="fas fa-search"></i>
+                    <span>Account Lookup</span>
                 </a>
                 <a href="{{ url_for('job_form') }}" class="nav-item {% if active_page == 'job_form' %}active{% endif %}">
                     <i class="fas fa-file-invoice"></i>

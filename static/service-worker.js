@@ -1,5 +1,6 @@
-const CACHE_NAME = 'dmc-v1';
+const CACHE_NAME = 'dmc-v1.2';
 const ASSETS_TO_CACHE = [
+  '/',
   '/dashboard',
   '/static/manifest.json',
   '/static/ie_logo.png',

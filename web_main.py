@@ -42,6 +42,13 @@ reporting_service = ReportingService(engine, staff_repo)
 admin_report_service = AdminReportService(engine, staff_repo)
 export_service = ExportService(engine)
 
+# Cache busting version
+APP_VERSION = "1.1.2"
+
+@app.context_processor
+def inject_version():
+    return dict(version=APP_VERSION)
+
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -64,10 +71,9 @@ def add_header(response):
 # --- ROUTES ---
 
 @app.route('/')
+@login_required
 def index():
-    if 'user' in session:
-        return redirect(url_for('dashboard'))
-    return redirect(url_for('login'))
+    return render_template('home.html', active_page='home')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -96,6 +102,7 @@ def logout():
 def dashboard():
     return render_template('dashboard.html', active_page='dashboard')
 
+# Rest of the routes restored here...
 @app.route('/job-form')
 @login_required
 def job_form():
@@ -163,6 +170,91 @@ def serve_sw():
     return send_from_directory(os.path.join(app.root_path, 'static'), 'service-worker.js')
 
 # --- API ENDPOINTS ---
+
+@app.route('/api/dashboard-stats', methods=['GET'])
+@login_required
+def get_dashboard_stats():
+    try:
+        from sqlalchemy import text
+        from datetime import datetime, timedelta
+        
+        now = datetime.now()
+        today_start = now.strftime('%Y-%m-%d 00:00:00')
+        week_start = (now - timedelta(days=now.weekday())).strftime('%Y-%m-%d 00:00:00')
+        month_start = now.strftime('%Y-%m-01 00:00:00')
+        
+        data = {}
+        with engine.connect() as conn:
+            # 1. Monthly BU
+            sql_monthly = """
+                SELECT IFNULL(c.business_unit, IFNULL(p.business_unit, 'Unknown')) as bu, SUM(p.amount_paid) as total
+                FROM (
+                    SELECT account_number, amount_paid, date_of_payment, business_unit FROM collections
+                    UNION ALL
+                    SELECT account_number, amount_paid, date_of_payment, NULL as business_unit FROM other_payments
+                ) p
+                LEFT JOIN customers c ON p.account_number = c.account_number
+                WHERE p.date_of_payment >= :mstart
+                GROUP BY bu ORDER BY bu ASC
+            """
+            res_m = conn.execute(text(sql_monthly), {"mstart": month_start}).fetchall()
+            data['monthly_bu'] = [{"bu": r[0], "total": float(r[1])} for r in res_m]
+            
+            # 2. Weekly BU
+            sql_weekly = """
+                SELECT IFNULL(c.business_unit, IFNULL(p.business_unit, 'Unknown')) as bu, SUM(p.amount_paid) as total
+                FROM (
+                    SELECT account_number, amount_paid, date_of_payment, business_unit FROM collections
+                    UNION ALL
+                    SELECT account_number, amount_paid, date_of_payment, NULL as business_unit FROM other_payments
+                ) p
+                LEFT JOIN customers c ON p.account_number = c.account_number
+                WHERE p.date_of_payment >= :wstart
+                GROUP BY bu ORDER BY bu ASC
+            """
+            res_w = conn.execute(text(sql_weekly), {"wstart": week_start}).fetchall()
+            data['weekly_bu'] = [{"bu": r[0], "total": float(r[1])} for r in res_w]
+            
+            # 3. Daily BU
+            sql_daily = """
+                SELECT IFNULL(c.business_unit, IFNULL(p.business_unit, 'Unknown')) as bu, SUM(p.amount_paid) as total
+                FROM (
+                    SELECT account_number, amount_paid, date_of_payment, business_unit FROM collections
+                    UNION ALL
+                    SELECT account_number, amount_paid, date_of_payment, NULL as business_unit FROM other_payments
+                ) p
+                LEFT JOIN customers c ON p.account_number = c.account_number
+                WHERE p.date_of_payment >= :dstart
+                GROUP BY bu ORDER BY bu ASC
+            """
+            res_d = conn.execute(text(sql_daily), {"dstart": today_start}).fetchall()
+            data['daily_bu'] = [{"bu": r[0], "total": float(r[1])} for r in res_d]
+            
+            # 4. Top/Bottom Officers Monthly
+            sql_dmo = """
+                SELECT IFNULL(c.account_officer, 'Unknown') as officer, 
+                       IFNULL(c.business_unit, 'Unknown') as bu,
+                       SUM(p.amount_paid) as total
+                FROM (
+                    SELECT account_number, amount_paid, date_of_payment FROM collections
+                    UNION ALL
+                    SELECT account_number, amount_paid, date_of_payment FROM other_payments
+                ) p
+                JOIN customers c ON p.account_number = c.account_number
+                WHERE p.date_of_payment >= :mstart
+                GROUP BY officer, bu HAVING total > 0 ORDER BY total DESC
+            """
+            res_dmo = conn.execute(text(sql_dmo), {"mstart": month_start}).fetchall()
+            dmo_list = [{"dmo": r[0], "bu": r[1], "total": float(r[2])} for r in res_dmo]
+            
+            data['top_dmo'] = dmo_list[:5]
+            data['bottom_dmo'] = dmo_list[-5:][::-1] if len(dmo_list) >= 5 else dmo_list[::-1]
+            
+        return jsonify({'success': True, 'data': data})
+    except Exception as e:
+        import logging
+        logging.error(f"Dashboard stats error: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/autocomplete')
 @login_required

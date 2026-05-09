@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DMC Management Suite</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ version }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
     <div class="main-wrapper">
         <div class="container">
-            <img src="{{ url_for('static', filename='ie_logo.png') }}" alt="IE Logo" class="logo">
+            <img src="{{ url_for('static', filename='ie_logo.png') }}?v={{ version }}" alt="IE Logo" class="logo">
             <h1>Welcome Qazeem Adebowale,</h1>
             <p class="subtitle">What can I help you with today?</p>
             <p class="time">{{ current_time }}</p>

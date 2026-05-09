@@ -19,10 +19,8 @@ from services.upload_service import UploadService
 from services.reporting_service import ReportingService
 from services.admin_report_service import AdminReportService
 from services.export_service import ExportService
-from services.sync_service import SyncService
 from utils.security import SessionManager
-from utils.network_manager import NetworkManager
-from db_utils import get_db_engine, get_local_engine
+from db_utils import get_db_engine
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
@@ -33,7 +31,6 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # CONFIG
 # ────────────────────────────────────────────────
 engine = get_db_engine()
-local_engine = get_local_engine()
 staff_repo = StaffRepository(engine)
 validation_service = ValidationService(engine)
 account_service = AccountService(engine, staff_repo, validation_service)
@@ -44,18 +41,6 @@ upload_service = UploadService(engine, staff_repo)
 reporting_service = ReportingService(engine, staff_repo)
 admin_report_service = AdminReportService(engine, staff_repo)
 export_service = ExportService(engine)
-sync_service = SyncService(local_engine, engine)
-network_manager = NetworkManager()
-network_manager.start() # Start connectivity polling
-
-# Trigger an initial pull from cloud in a background thread to populate local cache
-def initial_sync():
-    time.sleep(5) # Give some time for network manager to establish status
-    if network_manager.force_check():
-        print("Performing initial cloud sync...")
-        sync_service.pull_from_cloud(table_subset=['staff', 'performance_config'])
-
-threading.Thread(target=initial_sync, daemon=True).start()
 
 def login_required(f):
     @wraps(f)

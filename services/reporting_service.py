@@ -6,12 +6,10 @@ import numpy as np # type: ignore
 import holidays # type: ignore
 from pandas.tseries.offsets import BDay
 from typing import Any, List, Dict, Optional
-from db_utils import is_online, get_local_engine # type: ignore
 
 class ReportingService:
     def __init__(self, engine, staff_repo):
         self.engine = engine
-        self.local_engine = get_local_engine()
         self.repo = staff_repo
         self.ng_holidays = holidays.NG()
 
@@ -64,8 +62,7 @@ class ReportingService:
             filter_clause += " AND (c.account_officer LIKE :sq OR c.business_unit LIKE :sq)"
             params["sq"] = f"%{search_query}%"
 
-        active_engine = self.engine if is_online() else self.local_engine
-        with active_engine.connect() as conn:
+        with self.engine.connect() as conn:
             # 4. Fetch Config Targets
             targets_res = conn.execute(text("SELECT bu_name, monthly_target FROM performance_config")).fetchall()
             bu_targets = {r[0]: float(r[1]) for r in targets_res}
@@ -354,8 +351,7 @@ class ReportingService:
         # Apply limit/offset for preview
         preview_sql = f"SELECT * FROM ({sql}) AS base LIMIT :limit OFFSET :offset"
         
-        active_engine = self.engine if is_online() else self.local_engine
-        with active_engine.connect() as conn:
+        with self.engine.connect() as conn:
             df = pd.read_sql(text(preview_sql), conn, params=params)
             
             # Get total count for summary label
@@ -383,8 +379,7 @@ class ReportingService:
 
     def get_filter_options(self):
         """Fetches available BU and Officers for filter dropdowns."""
-        active_engine = self.engine if is_online() else self.local_engine
-        with active_engine.connect() as conn:
+        with self.engine.connect() as conn:
             # Use 'customers' table as primary source for filter options
             bus = conn.execute(text("SELECT DISTINCT business_unit FROM customers WHERE business_unit IS NOT NULL ORDER BY business_unit")).fetchall()
             officers = conn.execute(text("SELECT DISTINCT account_officer FROM customers WHERE account_officer IS NOT NULL ORDER BY account_officer")).fetchall()
@@ -520,8 +515,7 @@ class ReportingService:
                 ORDER BY `Total Recovery` DESC
             """
 
-        active_engine = self.engine if is_online() else self.local_engine
-        with active_engine.connect() as conn:
+        with self.engine.connect() as conn:
             if mode != "performance":
                 df = pd.read_sql(text(sql), conn, params=params)
             else:

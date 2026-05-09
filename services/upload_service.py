@@ -7,12 +7,10 @@ import logging
 import uuid
 from utils.security import SecurityManager # type: ignore
 import gc
-from db_utils import is_online, get_local_engine # type: ignore
 
 class UploadService:
     def __init__(self, engine, staff_repo):
         self.engine = engine
-        self.local_engine = get_local_engine()
         self.repo = staff_repo
         self.load_mappings()
 
@@ -90,8 +88,8 @@ class UploadService:
                     df_mapped[col] = df_mapped[col].astype(str).str.replace(r'[^\d.-]', '', regex=True)
                     df_mapped[col] = pd.to_numeric(df_mapped[col], errors='coerce')
 
-            # Offline-First Strategy: Always write to Local SQLite first
-            df_mapped['sync_status'] = 'PENDING'
+            # Direct to RDS
+            df_mapped['sync_status'] = 'SYNCED'
             if 'transaction_id' not in df_mapped.columns:
                 import hashlib
                 def generate_tx_id(row):
@@ -113,9 +111,9 @@ class UploadService:
                     return hashlib.md5(base_string.encode('utf-8')).hexdigest()
                 df_mapped['transaction_id'] = df_mapped.apply(generate_tx_id, axis=1)
             
-            with self.local_engine.begin() as conn:
-                res_target_cols = conn.execute(text(f"PRAGMA table_info({table_name})"))
-                target_cols = [row[1] for row in res_target_cols.fetchall()]
+            with self.engine.begin() as conn:
+                res_target_cols = conn.execute(text(f"DESCRIBE {table_name}"))
+                target_cols = [row[0] for row in res_target_cols.fetchall()]
                 
                 cols_to_insert = [c for c in df_mapped.columns if c in target_cols]
                 if not cols_to_insert:
@@ -136,7 +134,7 @@ class UploadService:
 
                 cols = list(df_final.columns)
                 target_outbox = f"temp_{table_name}" if table_name in ['collections', 'other_payments', 'validation', 'disconnections', 'resolutions', 'discounts', 'adjustments'] else table_name
-                sql = text(f"INSERT OR IGNORE INTO {target_outbox} ({', '.join(cols)}) SELECT {', '.join(cols)} FROM {staging_table}")
+                sql = text(f"INSERT IGNORE INTO {target_outbox} ({', '.join(cols)}) SELECT {', '.join(cols)} FROM {staging_table}")
                 result = conn.execute(sql)
                 total_new = result.rowcount
                 total_processed = len(df_final)
@@ -176,8 +174,8 @@ class UploadService:
             else:
                 df_mapped = df.copy()
 
-            # Offline-First Strategy: Always write to Local SQLite first
-            df_mapped['sync_status'] = 'PENDING'
+            # Direct to RDS
+            df_mapped['sync_status'] = 'SYNCED'
             if 'transaction_id' not in df_mapped.columns:
                 import hashlib
                 def generate_tx_id_bulk(row):
@@ -199,9 +197,9 @@ class UploadService:
                     return hashlib.md5(base_string.encode('utf-8')).hexdigest()
                 df_mapped['transaction_id'] = df_mapped.apply(generate_tx_id_bulk, axis=1)
 
-            with self.local_engine.begin() as conn:
-                res_target_cols = conn.execute(text(f"PRAGMA table_info({table_name})"))
-                target_cols = [row[1] for row in res_target_cols.fetchall()]
+            with self.engine.begin() as conn:
+                res_target_cols = conn.execute(text(f"DESCRIBE {table_name}"))
+                target_cols = [row[0] for row in res_target_cols.fetchall()]
 
                 cols_to_insert = [c for c in df_mapped.columns if c in target_cols]
                 if not cols_to_insert:
@@ -222,7 +220,7 @@ class UploadService:
 
                 cols = list(df_final.columns)
                 target_outbox = f"temp_{table_name}" if table_name in ['collections', 'other_payments', 'validation', 'disconnections', 'resolutions', 'discounts', 'adjustments'] else table_name
-                sql = text(f"INSERT OR IGNORE INTO {target_outbox} ({', '.join(cols)}) SELECT {', '.join(cols)} FROM {staging_table}")
+                sql = text(f"INSERT IGNORE INTO {target_outbox} ({', '.join(cols)}) SELECT {', '.join(cols)} FROM {staging_table}")
                 result = conn.execute(sql)
                 new_records = result.rowcount
                 total_len = len(df_final)

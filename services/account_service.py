@@ -1,21 +1,17 @@
 from sqlalchemy import text
 from datetime import datetime
 from services.validation_service import ValidationService
-from db_utils import is_online, get_local_engine # type: ignore
 
 class AccountService:
     def __init__(self, engine, staff_repo, validation_service):
         self.engine = engine
-        self.local_engine = get_local_engine()
         self.repo = staff_repo
         self.validation_service = validation_service
 
     def get_account_financials(self, account_number, username, role, force_online=False):
         """Reconstructed legacy financial logic from account_dashboard.py."""
         
-        active_engine = self.engine if (force_online or is_online()) else self.local_engine
-        
-        with active_engine.connect() as conn:
+        with self.engine.connect() as conn:
             # 1. Fetch Customer/Demographic Info
             cust = conn.execute(text("SELECT * FROM customers WHERE account_number = :acc"), {"acc": account_number}).fetchone()
             

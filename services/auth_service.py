@@ -1,12 +1,10 @@
 from utils.security import SecurityManager # type: ignore
 from datetime import datetime, timedelta
-from db_utils import is_online # type: ignore
 
 class AuthService:
     def __init__(self, staff_repo, session_manager):
         self.repo = staff_repo
         self.session = session_manager
-        self.OFFLINE_GRACE_DAYS = 7 # Requirement: 3-7 days
 
     def log_attempt(self, username, action, details=None):
         """Encapsulated method for external UI components to log auth attempts."""
@@ -21,22 +19,6 @@ class AuthService:
             self.session.track_login_attempt(username)
             self.repo.log_activity(username, "LOGIN_FAILED", "User not found", event_type='MAJOR')
             return None
-
-        # Offline Grace Period Enforcement
-        if not is_online():
-            # Check if user has last_online_login
-            # Row objects in SQLAlchemy 2.0 don't have .get() - use mapping access
-            last_login = user.get('last_online_login') if isinstance(user, dict) else (user._mapping.get('last_online_login') if hasattr(user, '_mapping') else user['last_online_login'])
-            if not last_login:
-                raise Exception("Offline login not permitted. Please log in online first to authorize this device.")
-            
-            # Ensure last_login is a datetime object (SQLite might return string)
-            if isinstance(last_login, str):
-                try: last_login = datetime.fromisoformat(last_login)
-                except: last_login = None
-            
-            if not last_login or (datetime.now() - last_login) > timedelta(days=self.OFFLINE_GRACE_DAYS):
-                raise Exception(f"Offline access expired (Limit: {self.OFFLINE_GRACE_DAYS} days). Please connect to the internet to re-authorize.")
 
         # Check if password is bcrypt hashed or plain (for migration)
         # Requirement: Password must be lowercase for comparison
@@ -61,9 +43,8 @@ class AuthService:
             is_valid = False
 
         if is_valid:
-            # Update last_online_login if currently online
-            if is_online():
-                self.repo.update_last_online_login(username)
+            # Update last_online_login
+            self.repo.update_last_online_login(username)
 
             self.session.reset_login_attempts(username)
             self.session.update_activity()

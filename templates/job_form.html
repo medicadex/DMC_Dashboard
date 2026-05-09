@@ -1,0 +1,573 @@
+{% extends 'base.html' %}
+
+{% block title %}Job Form Creator - IE DMC{% endblock %}
+{% block page_title %}📋 Job Form Creator{% endblock %}
+
+{% block head %}
+<style>
+    .selection-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .form-label {
+        font-weight: 600;
+        font-size: 14px;
+        color: var(--text-color);
+    }
+
+    .multi-select-container {
+        background-color: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        height: 150px;
+        overflow-y: auto;
+        padding: 10px;
+    }
+
+    .select-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 5px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        transition: background 0.2s;
+    }
+
+    .select-item:hover {
+        background-color: rgba(243, 44, 145, 0.05);
+    }
+
+    .select-item input {
+        cursor: pointer;
+    }
+
+    .form-control-web {
+        padding: 10px 15px;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        background-color: var(--card-bg);
+        color: var(--text-color);
+        font-family: inherit;
+        font-size: 14px;
+        outline: none;
+        transition: border-color 0.2s;
+    }
+
+    .form-control-web:focus {
+        border-color: var(--primary-color);
+    }
+
+    .preview-section {
+        margin-top: 40px;
+        border-top: 1px solid var(--border-color);
+        padding-top: 30px;
+    }
+
+    .table-container {
+        width: 100%;
+        overflow-x: auto;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+    }
+
+    th {
+        background-color: rgba(243, 44, 145, 0.1);
+        color: var(--primary-color);
+        text-align: left;
+        padding: 12px 15px;
+        font-weight: 600;
+        border-bottom: 2px solid var(--border-color);
+        white-space: nowrap;
+    }
+
+    td {
+        padding: 10px 15px;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--text-color);
+    }
+
+    tr:last-child td {
+        border-bottom: none;
+    }
+
+    .btn-group {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 30px;
+    }
+
+    .btn-main {
+        padding: 12px 30px;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: none;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .btn-primary-web {
+        background-color: var(--primary-color);
+        color: white;
+    }
+
+    .btn-primary-web:hover {
+        background-color: var(--primary-hover);
+        transform: translateY(-2px);
+    }
+
+    .btn-danger-web {
+        background-color: transparent;
+        color: var(--danger-color);
+        border: 1px solid var(--danger-color);
+    }
+
+    .btn-danger-web:hover {
+        background-color: var(--danger-color);
+        color: white;
+    }
+
+    .stats-card {
+        background-color: rgba(243, 44, 145, 0.05);
+        padding: 15px 25px;
+        border-radius: 12px;
+        border: 1px solid rgba(243, 44, 145, 0.2);
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+
+    .stats-val {
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--primary-color);
+    }
+
+    .search-input {
+        width: 100%;
+        padding: 8px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        margin-bottom: 10px;
+        font-size: 12px;
+    }
+
+    .select-all-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0 5px 8px;
+        border-bottom: 1px solid var(--border-color);
+        margin-bottom: 8px;
+    }
+
+    .select-all-btn {
+        background: none;
+        border: none;
+        color: var(--primary-color);
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        padding: 2px 5px;
+        border-radius: 4px;
+        transition: background 0.2s;
+    }
+
+    .select-all-btn:hover {
+        background-color: rgba(243, 44, 145, 0.1);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px;">
+        <div>
+            <p style="color: var(--text-muted); margin: 0;">Configure filters to generate and download customized job forms.</p>
+        </div>
+        <div class="stats-card">
+            <i class="fas fa-database" style="color: var(--primary-color); font-size: 24px;"></i>
+            <div>
+                <div style="font-size: 12px; color: var(--text-muted); font-weight: 500;">Total Rows Found</div>
+                <div class="stats-val" id="totalRows">0</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="selection-grid">
+        <!-- 1. Business Unit -->
+        <div class="form-group">
+            <label class="form-label">1. Business Unit:</label>
+            <div class="select-all-container">
+                <input type="text" class="search-input" style="margin-bottom: 0; flex-grow: 1; margin-right: 10px;" placeholder="Search BU..." onkeyup="filterItems(this, 'buList')">
+                <button class="select-all-btn" onclick="toggleSelectAll('buList', true)">All</button>
+                <button class="select-all-btn" onclick="toggleSelectAll('buList', false)">None</button>
+            </div>
+            <div class="multi-select-container" id="buList">
+                <!-- Populated via JS -->
+            </div>
+        </div>
+
+        <!-- 2. Officer Type -->
+        <div class="form-group">
+            <label class="form-label">2. Officer Type:</label>
+            <div class="select-all-container" style="justify-content: flex-end;">
+                <button class="select-all-btn" onclick="toggleSelectAll('typeList', true)">All</button>
+                <button class="select-all-btn" onclick="toggleSelectAll('typeList', false)">None</button>
+            </div>
+            <div class="multi-select-container" id="typeList">
+                <div class="select-item">
+                    <input type="checkbox" value="DMO" onchange="updateOfficers()">
+                    <span>DMO</span>
+                </div>
+                <div class="select-item">
+                    <input type="checkbox" value="Vendor" onchange="updateOfficers()">
+                    <span>Vendor</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. Officer Name -->
+        <div class="form-group">
+            <label class="form-label">3. Officer Name:</label>
+            <div class="select-all-container">
+                <input type="text" class="search-input" style="margin-bottom: 0; flex-grow: 1; margin-right: 10px;" placeholder="Search Officer..." onkeyup="filterItems(this, 'officerList')">
+                <button class="select-all-btn" onclick="toggleSelectAll('officerList', true)">All</button>
+                <button class="select-all-btn" onclick="toggleSelectAll('officerList', false)">None</button>
+            </div>
+            <div class="multi-select-container" id="officerList">
+                <div style="color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 40px;">Select BU & Type first</div>
+            </div>
+        </div>
+
+        <!-- 4. Job Form Type -->
+        <div class="form-group">
+            <label class="form-label">4. Job Form Type:</label>
+            <select class="form-control-web" id="formType" onchange="updatePreview()">
+                <option value="Full">Full</option>
+                <option value="Defaulted payment Plan">Defaulted payment Plan</option>
+                <option value="Exclude Payment Plan">Exclude Payment Plan</option>
+            </select>
+        </div>
+
+        <!-- 5. Feeders -->
+        <div class="form-group">
+            <label class="form-label">5. Select Feeders:</label>
+            <div class="select-all-container">
+                <input type="text" class="search-input" style="margin-bottom: 0; flex-grow: 1; margin-right: 10px;" placeholder="Search Feeder..." onkeyup="filterItems(this, 'feederList')">
+                <button class="select-all-btn" onclick="toggleSelectAll('feederList', true)">All</button>
+                <button class="select-all-btn" onclick="toggleSelectAll('feederList', false)">None</button>
+            </div>
+            <div class="multi-select-container" id="feederList">
+                <div style="color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 40px;">Select Officer first</div>
+            </div>
+        </div>
+
+        <!-- 6. DT Names -->
+        <div class="form-group">
+            <label class="form-label">6. Select DT Names:</label>
+            <div class="select-all-container">
+                <input type="text" class="search-input" style="margin-bottom: 0; flex-grow: 1; margin-right: 10px;" placeholder="Search DT..." onkeyup="filterItems(this, 'dtList')">
+                <button class="select-all-btn" onclick="toggleSelectAll('dtList', true)">All</button>
+                <button class="select-all-btn" onclick="toggleSelectAll('dtList', false)">None</button>
+            </div>
+            <div class="multi-select-container" id="dtList">
+                <div style="color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 40px;">Select Feeder first</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 7. Output Columns -->
+    <div class="form-group" style="margin-bottom: 30px;">
+        <label class="form-label">7. Output Columns:</label>
+        <div class="select-all-container" style="justify-content: flex-end;">
+            <button class="select-all-btn" onclick="toggleSelectAll('columnList', true)">All</button>
+            <button class="select-all-btn" onclick="toggleSelectAll('columnList', false)">None</button>
+        </div>
+        <div class="multi-select-container" id="columnList" style="height: 100px; display: flex; flex-wrap: wrap; gap: 10px;">
+            <!-- Populated via JS -->
+        </div>
+    </div>
+
+    <div class="btn-group">
+        <button class="btn-main btn-danger-web" onclick="resetFilters()">
+            <i class="fas fa-undo"></i>
+            Reset Filters
+        </button>
+        <div style="display: flex; gap: 15px;">
+            <button class="btn-main btn-primary-web" style="background-color: var(--success-color);" onclick="downloadJobForm()">
+                <i class="fas fa-download"></i>
+                Download Job Form (.xlsx)
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="card preview-section" id="previewContainer" style="display: none;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3 style="margin: 0; font-size: 18px; color: var(--primary-color);">👁️ Data Preview (Top 100 Rows)</h3>
+    </div>
+    <div class="table-container">
+        <table id="previewTable">
+            <thead>
+                <tr id="tableHeader"></tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const defaultCols = [
+        "account_number", "account_name", "account_address", "closing_balance", 
+        "pos_other_payments", "adjustment", "discount", 
+        "outstanding_balance", "payment_plan_status", "last_payment_date", "phone_number", 
+        "dt_name", "feeder", "account_officer"
+    ];
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadInitialData();
+        setupColumns();
+    });
+
+    async function loadInitialData() {
+        const response = await fetch('/api/job-form/initial-data');
+        const data = await response.json();
+        
+        const buList = document.getElementById('buList');
+        buList.innerHTML = data.business_units.map(bu => `
+            <div class="select-item">
+                <input type="checkbox" value="${bu}" onchange="updateOfficers()">
+                <span>${bu}</span>
+            </div>
+        `).join('');
+    }
+
+    function setupColumns() {
+        const columnList = document.getElementById('columnList');
+        columnList.innerHTML = defaultCols.map(col => `
+            <div class="select-item" style="border: 1px solid var(--border-color); background: var(--bg-color);">
+                <input type="checkbox" value="${col}" checked>
+                <span>${col.replace(/_/g, ' ')}</span>
+            </div>
+        `).join('');
+    }
+
+    function getSelected(id) {
+        return Array.from(document.querySelectorAll(`#${id} input:checked`)).map(cb => cb.value);
+    }
+
+    async function updateOfficers() {
+        const bus = getSelected('buList');
+        const types = getSelected('typeList');
+        
+        if (bus.length === 0 || types.length === 0) {
+            document.getElementById('officerList').innerHTML = '<div style="color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 40px;">Select BU & Type first</div>';
+            return;
+        }
+
+        const query = new URLSearchParams();
+        bus.forEach(b => query.append('bu', b));
+        types.forEach(t => query.append('type', t));
+
+        const response = await fetch(`/api/job-form/officers?${query.toString()}`);
+        const names = await response.json();
+        
+        const officerList = document.getElementById('officerList');
+        officerList.innerHTML = names.map(name => `
+            <div class="select-item">
+                <input type="checkbox" value="${name}" onchange="updateFeeders()">
+                <span>${name}</span>
+            </div>
+        `).join('');
+    }
+
+    async function updateFeeders() {
+        const bus = getSelected('buList');
+        const names = getSelected('officerList');
+        
+        if (names.length === 0) {
+            document.getElementById('feederList').innerHTML = '<div style="color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 40px;">Select Officer first</div>';
+            return;
+        }
+
+        const query = new URLSearchParams();
+        bus.forEach(b => query.append('bu', b));
+        names.forEach(n => query.append('name', n));
+
+        const response = await fetch(`/api/job-form/feeders?${query.toString()}`);
+        const feeders = await response.json();
+        
+        const feederList = document.getElementById('feederList');
+        feederList.innerHTML = feeders.map(f => `
+            <div class="select-item">
+                <input type="checkbox" value="${f}" onchange="updateDTs()">
+                <span>${f}</span>
+            </div>
+        `).join('');
+    }
+
+    async function updateDTs() {
+        const bus = getSelected('buList');
+        const names = getSelected('officerList');
+        const feeders = getSelected('feederList');
+        
+        if (feeders.length === 0) {
+            document.getElementById('dtList').innerHTML = '<div style="color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 40px;">Select Feeder first</div>';
+            return;
+        }
+
+        const query = new URLSearchParams();
+        bus.forEach(b => query.append('bu', b));
+        names.forEach(n => query.append('name', n));
+        feeders.forEach(f => query.append('feeder', f));
+
+        const response = await fetch(`/api/job-form/dts?${query.toString()}`);
+        const dts = await response.json();
+        
+        const dtList = document.getElementById('dtList');
+        dtList.innerHTML = dts.map(dt => `
+            <div class="select-item">
+                <input type="checkbox" value="${dt}" onchange="updatePreview()">
+                <span>${dt}</span>
+            </div>
+        `).join('');
+    }
+
+    async function updatePreview() {
+        const bus = getSelected('buList');
+        const types = getSelected('typeList');
+        const names = getSelected('officerList');
+        const feeders = getSelected('feederList');
+        const dts = getSelected('dtList');
+        const formType = document.getElementById('formType').value;
+
+        if (dts.length === 0) return;
+
+        const query = new URLSearchParams();
+        bus.forEach(b => query.append('bu', b));
+        types.forEach(t => query.append('type', t));
+        names.forEach(n => query.append('name', n));
+        feeders.forEach(f => query.append('feeder', f));
+        dts.forEach(d => query.append('dt', d));
+        query.append('form_type', formType);
+
+        const response = await fetch(`/api/job-form/preview?${query.toString()}`);
+        const data = await response.json();
+        
+        if (data.length > 0) {
+            document.getElementById('previewContainer').style.display = 'block';
+            document.getElementById('totalRows').innerText = data.length === 100 ? "100+" : data.length;
+            
+            // Update Table
+            const cols = Object.keys(data[0]);
+            document.getElementById('tableHeader').innerHTML = cols.map(c => `<th>${c.replace(/_/g, ' ')}</th>`).join('');
+            document.getElementById('tableBody').innerHTML = data.map(row => `
+                <tr>
+                    ${cols.map(c => `<td>${row[c] || ''}</td>`).join('')}
+                </tr>
+            `).join('');
+        }
+    }
+
+    async function downloadJobForm() {
+        const bus = getSelected('buList');
+        const types = getSelected('typeList');
+        const names = getSelected('officerList');
+        const feeders = getSelected('feederList');
+        const dts = getSelected('dtList');
+        const columns = getSelected('columnList');
+        const formType = document.getElementById('formType').value;
+
+        if (bus.length === 0) {
+            alert("Please select at least one Business Unit.");
+            return;
+        }
+
+        const response = await fetch('/api/job-form/export', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                bu: bus,
+                type: types,
+                name: names,
+                feeder: feeders,
+                dt: dts,
+                form_type: formType,
+                columns: columns
+            })
+        });
+
+        const result = await response.json();
+        if (result.success) {
+            // Use a relative path or absolute path from the root
+            const downloadUrl = `/download/${result.filename}`;
+            console.log("Attempting download from:", downloadUrl);
+            
+            // Create a temporary link to trigger download
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.setAttribute('download', result.filename);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } else {
+            alert("Error exporting file: " + (result.error || "Unknown error"));
+        }
+    }
+
+    function filterItems(input, listId) {
+        const filter = input.value.toLowerCase();
+        const items = document.getElementById(listId).getElementsByClassName('select-item');
+        for (let item of items) {
+            const text = item.innerText.toLowerCase();
+            item.style.display = text.includes(filter) ? 'flex' : 'none';
+        }
+    }
+
+    function resetFilters() {
+        location.reload();
+    }
+
+    function toggleSelectAll(listId, checked) {
+        const list = document.getElementById(listId);
+        const checkboxes = list.querySelectorAll('input[type="checkbox"]');
+        checkboxes.forEach(cb => {
+            if (cb.parentElement.style.display !== 'none') {
+                cb.checked = checked;
+            }
+        });
+        
+        // Trigger chain updates
+        if (listId === 'buList' || listId === 'typeList') updateOfficers();
+        else if (listId === 'officerList') updateFeeders();
+        else if (listId === 'feederList') updateDTs();
+        else if (listId === 'dtList') updatePreview();
+    }
+</script>
+{% endblock %}

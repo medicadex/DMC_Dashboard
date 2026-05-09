@@ -61,6 +61,105 @@
         }
 
         /* Main Content Area */
+        .main-container {
+            display: flex;
+            flex-grow: 1;
+            overflow: hidden;
+        }
+
+        /* Sidebar Styles */
+        .sidebar {
+            width: 280px;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s ease;
+            z-index: 100;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .nav-links {
+            flex-grow: 1;
+            padding: 20px 0;
+            overflow-y: auto;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 25px;
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: all 0.2s;
+            border-left: 4px solid transparent;
+            font-weight: 500;
+        }
+
+        .nav-item i {
+            width: 24px;
+            margin-right: 12px;
+            font-size: 18px;
+            text-align: center;
+        }
+
+        .nav-item:hover {
+            background-color: rgba(243, 44, 145, 0.05);
+            color: var(--primary-color);
+        }
+
+        .nav-item.active {
+            background-color: rgba(243, 44, 145, 0.1);
+            color: var(--primary-color);
+            border-left-color: var(--primary-color);
+        }
+
+        .sidebar-footer {
+            padding: 20px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .user-avatar {
+            width: 35px;
+            height: 35px;
+            background-color: var(--primary-color);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+
+        .logout-btn {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            padding: 10px;
+            color: var(--danger-color);
+            text-decoration: none;
+            border-radius: 6px;
+            transition: background 0.2s;
+        }
+
+        .logout-btn:hover {
+            background: rgba(239, 68, 68, 0.1);
+        }
+
         .main-content {
             flex-grow: 1;
             display: flex;
@@ -78,6 +177,29 @@
             justify-content: space-between;
             padding: 0 30px;
             transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+
+        .menu-toggle {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--text-color);
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        @media (max-width: 992px) {
+            .sidebar {
+                position: fixed;
+                left: -280px;
+                height: 100vh;
+            }
+            .sidebar.open {
+                left: 0;
+            }
+            .menu-toggle {
+                display: block;
+            }
         }
 
         .theme-toggle {
@@ -116,26 +238,94 @@
 </head>
 <body>
 
-    <!-- Main Content -->
-    <div class="main-content">
-        <!-- Topbar -->
-        <header class="topbar">
-            <div style="display: flex; align-items: center; gap: 15px;">
-                <img src="{{ url_for('static', filename='ie_logo.png') }}" alt="Ikeja Electric Logo" style="height: 38px; width: auto; border-radius: 4px;">
-                <h2 style="margin:0; font-size: 22px; font-weight: 700; color: var(--primary-color);">Debt Management Suite</h2>
+    <div class="main-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <img src="{{ url_for('static', filename='ie_logo.png') }}" alt="Logo" style="height: 40px; border-radius: 4px;">
+                <div style="display: flex; flex-direction: column;">
+                    <span style="font-weight: 700; color: var(--primary-color); font-size: 18px;">IE DMC</span>
+                    <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Management Suite</span>
+                </div>
             </div>
-            
-            <div style="display: flex; align-items: center;">
-                <button class="theme-toggle" id="themeToggleBtn" title="Toggle Theme">
-                    <i class="fas fa-moon"></i>
-                </button>
-            </div>
-        </header>
 
-        <!-- Canvas -->
-        <main class="content-canvas">
-            {% block content %}{% endblock %}
-        </main>
+            <nav class="nav-links">
+                <a href="{{ url_for('dashboard') }}" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
+                    <i class="fas fa-chart-pie"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="{{ url_for('job_form') }}" class="nav-item {% if active_page == 'job_form' %}active{% endif %}">
+                    <i class="fas fa-file-invoice"></i>
+                    <span>Job Form Creator</span>
+                </a>
+                <a href="{{ url_for('payment_listing') }}" class="nav-item {% if active_page == 'payments' %}active{% endif %}">
+                    <i class="fas fa-list-ul"></i>
+                    <span>Payment Listing</span>
+                </a>
+                <a href="{{ url_for('customer_listing') }}" class="nav-item {% if active_page == 'customers' %}active{% endif %}">
+                    <i class="fas fa-users"></i>
+                    <span>Customer Listing</span>
+                </a>
+                <a href="{{ url_for('performance_rank') }}" class="nav-item {% if active_page == 'performance' %}active{% endif %}">
+                    <i class="fas fa-medal"></i>
+                    <span>Performance Rank</span>
+                </a>
+                <a href="{{ url_for('report_uploader') }}" class="nav-item {% if active_page == 'upload' %}active{% endif %}">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <span>Report Uploader</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                {% if session.get('user') %}
+                <div class="user-info">
+                    <div class="user-avatar">
+                        {{ (session['user']['full_name'] or session['user']['username'])[0] | upper }}
+                    </div>
+                    <div style="display: flex; flex-direction: column; overflow: hidden;">
+                        <span style="font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{{ session['user']['full_name'] }}">
+                            {{ session['user']['full_name'] }}
+                        </span>
+                        <span style="font-size: 12px; color: var(--text-muted);">{{ session['user']['role'] }}</span>
+                    </div>
+                </div>
+                {% endif %}
+                <a href="{{ url_for('logout') }}" class="logout-btn">
+                    <i class="fas fa-sign-out-alt" style="margin-right: 10px;"></i>
+                    <span>Logout</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Topbar -->
+            <header class="topbar">
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <button class="menu-toggle" id="menuToggle">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <h2 style="margin:0; font-size: 20px; font-weight: 700; color: var(--text-color);">
+                        {% block page_title %}{% endblock %}
+                    </h2>
+                </div>
+                
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <div id="connectionStatus" style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--success-color);">
+                        <i class="fas fa-circle" style="font-size: 8px;"></i>
+                        <span>System Online</span>
+                    </div>
+                    <button class="theme-toggle" id="themeToggleBtn" title="Toggle Theme">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Canvas -->
+            <main class="content-canvas">
+                {% block content %}{% endblock %}
+            </main>
+        </div>
     </div>
 
     <script>
@@ -173,6 +363,25 @@
                 icon.className = 'fas fa-moon'; // Show moon when light
             }
         }
+
+        // Sidebar Toggle
+        const menuToggle = document.getElementById('menuToggle');
+        const sidebar = document.getElementById('sidebar');
+
+        if (menuToggle) {
+            menuToggle.addEventListener('click', () => {
+                sidebar.classList.toggle('open');
+            });
+        }
+
+        // Close sidebar when clicking outside on mobile
+        document.addEventListener('click', (e) => {
+            if (window.innerWidth <= 992) {
+                if (!sidebar.contains(e.target) && !menuToggle.contains(e.target) && sidebar.classList.contains('open')) {
+                    sidebar.classList.remove('open');
+                }
+            }
+        });
     </script>
     {% block scripts %}{% endblock %}
 </body>

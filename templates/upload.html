@@ -1,95 +1,327 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Upload Daily Records - DMC</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <style>
-        .upload-card {
-            background: white;
-            padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
-            max-width: 600px;
-            margin: 40px auto;
-            text-align: center;
-        }
-        .drop-zone {
-            border: 2px dashed #e0e0e0;
-            padding: 40px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            transition: border-color 0.3s;
-            cursor: pointer;
-        }
-        .drop-zone:hover { border-color: #2196F3; }
-        .drop-zone i { font-size: 3em; color: #2196F3; margin-bottom: 10px; }
-        #file-input { display: none; }
-        .status-msg { margin-top: 20px; font-weight: 500; }
-        .success { color: #4CAF50; }
-        .error { color: #f44336; }
-    </style>
-</head>
-<body>
-    <nav class="navbar">
-        <img src="{{ url_for('static', filename='ie_logo.png') }}" alt="Logo" class="nav-logo">
-        <div class="nav-links">
-            <a href="/">Home</a>
-            <a href="/dashboard">Dashboard</a>
-            <a href="/reports">Reports</a>
-        </div>
-    </nav>
+{% extends 'base.html' %}
 
-    <div class="upload-card">
-        <h1>Upload Daily Records</h1>
-        <p>Select an Excel file to upload to the database</p>
+{% block title %}Report Uploader - IE DMC{% endblock %}
+{% block page_title %}📤 Report Uploader{% endblock %}
+
+{% block head %}
+<style>
+    .maintenance-banner {
+        background-color: rgba(239, 68, 68, 0.1);
+        border: 2px solid var(--danger-color);
+        color: var(--danger-color);
+        padding: 20px;
+        border-radius: 12px;
+        text-align: center;
+        margin-bottom: 30px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .maintenance-banner i {
+        font-size: 32px;
+    }
+
+    .maintenance-banner h2 {
+        margin: 0;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    .upload-container {
+        max-width: 800px;
+        margin: 0 auto;
+        opacity: 0.6;
+        pointer-events: none;
+    }
+
+    .drop-zone {
+        border: 2px dashed var(--border-color);
+        border-radius: 12px;
+        padding: 60px 40px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s;
+        background-color: rgba(243, 44, 145, 0.02);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .drop-zone:hover, .drop-zone.dragover {
+        border-color: var(--primary-color);
+        background-color: rgba(243, 44, 145, 0.05);
+    }
+
+    .drop-zone i {
+        font-size: 48px;
+        color: var(--primary-color);
+    }
+
+    .drop-zone p {
+        margin: 0;
+        font-size: 16px;
+        color: var(--text-muted);
+    }
+
+    .drop-zone b {
+        color: var(--text-color);
+    }
+
+    #file-input {
+        display: none;
+    }
+
+    .file-info {
+        margin-top: 20px;
+        padding: 15px;
+        background-color: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .progress-container {
+        margin-top: 30px;
+        display: none;
+    }
+
+    .progress-bar {
+        height: 8px;
+        background-color: var(--border-color);
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    .progress-fill {
+        height: 100%;
+        background-color: var(--primary-color);
+        width: 0%;
+        transition: width 0.3s;
+    }
+
+    .status-msg {
+        margin-top: 20px;
+        padding: 15px;
+        border-radius: 8px;
+        display: none;
+        font-weight: 500;
+        text-align: center;
+    }
+
+    .status-success {
+        background-color: rgba(16, 185, 129, 0.1);
+        color: var(--success-color);
+        border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+
+    .status-error {
+        background-color: rgba(239, 68, 68, 0.1);
+        color: var(--danger-color);
+        border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="maintenance-banner">
+    <i class="fas fa-tools"></i>
+    <h2>DO NOT UPLOAD</h2>
+    <p style="margin: 0; font-weight: 600;">This section is under maintenance</p>
+</div>
+
+<div class="upload-container">
+    <div class="card">
+        <h3 style="margin-top: 0; margin-bottom: 20px;">Upload Performance Reports</h3>
         
-        <form id="upload-form">
-            <div class="drop-zone" onclick="document.getElementById('file-input').click()">
+        <div class="form-group" style="margin-bottom: 25px;">
+            <label class="form-label">Select Report Type</label>
+            <select class="form-control-web" id="reportType" style="width: 100%;">
+                <option value="" disabled selected>Choose a report type...</option>
+                <option value="migration">Migration Report</option>
+                <option value="disconnection">Disconnection Report</option>
+                <option value="resolution">Resolution Report</option>
+            </select>
+        </div>
+
+        <p style="color: var(--text-muted); margin-bottom: 30px;">Upload the corresponding Excel file (.xlsx, .xls) to update records.</p>
+
+        <form id="uploadForm">
+            <div class="drop-zone" id="dropZone">
                 <i class="fas fa-cloud-upload-alt"></i>
-                <p>Click or drag file here to upload</p>
-                <input type="file" id="file-input" accept=".xlsx, .xls">
+                <div>
+                    <p><b>Click to upload</b> or drag and drop</p>
+                    <p style="font-size: 13px; margin-top: 5px;">Excel files only (max 50MB)</p>
+                </div>
+                <input type="file" id="fileInput" accept=".xlsx, .xls">
             </div>
-            <button type="submit" class="btn btn-upload" style="width: 100%;">Process File</button>
+
+            <div class="file-info" id="fileInfo">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <i class="fas fa-file-excel" style="color: #1D6F42; font-size: 20px;"></i>
+                    <div>
+                        <div id="fileName" style="font-weight: 600; font-size: 14px;">filename.xlsx</div>
+                        <div id="fileSize" style="font-size: 12px; color: var(--text-muted);">0 KB</div>
+                    </div>
+                </div>
+                <button type="button" class="theme-toggle" onclick="clearFile()" style="color: var(--danger-color);">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div class="progress-container" id="progressContainer">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px;">
+                    <span id="progressText">Uploading...</span>
+                    <span id="progressPercent">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+
+            <div id="statusMsg" class="status-msg"></div>
+
+            <button type="submit" class="btn-main btn-primary-web" style="width: 100%; margin-top: 30px; justify-content: center;" id="uploadBtn" disabled>
+                <i class="fas fa-rocket"></i>
+                Start Processing Report
+            </button>
         </form>
-        
-        <div id="status" class="status-msg"></div>
     </div>
 
-    <script>
-        const form = document.getElementById('upload-form');
-        const fileInput = document.getElementById('file-input');
-        const status = document.getElementById('status');
+    <div class="card" style="margin-top: 30px;">
+        <h4 style="margin-top: 0; margin-bottom: 15px;">Upload Guidelines</h4>
+        <ul style="color: var(--text-muted); font-size: 13px; line-height: 1.6; padding-left: 20px;">
+            <li>Ensure the Excel file contains all required columns for recovery tracking.</li>
+            <li>Date formats should be consistent (DD-MM-YYYY or YYYY-MM-DD).</li>
+            <li>Maximum file size allowed is 50MB.</li>
+            <li>Wait for the "Processing Complete" message before navigating away.</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}
 
-        form.onsubmit = async (e) => {
-            e.preventDefault();
-            if (!fileInput.files[0]) {
-                status.innerHTML = '<span class="error">Please select a file first.</span>';
-                return;
-            }
+{% block scripts %}
+<script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const fileInfo = document.getElementById('fileInfo');
+    const fileName = document.getElementById('fileName');
+    const fileSize = document.getElementById('fileSize');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const progressContainer = document.getElementById('progressContainer');
+    const progressFill = document.getElementById('progressFill');
+    const progressPercent = document.getElementById('progressPercent');
+    const statusMsg = document.getElementById('statusMsg');
+    const uploadForm = document.getElementById('uploadForm');
 
-            status.innerHTML = 'Processing...';
-            const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
+    // Drag and drop handlers
+    dropZone.addEventListener('click', () => fileInput.click());
 
-            try {
-                const response = await fetch('/upload', {
-                    method: 'POST',
-                    body: formData
-                });
-                const result = await response.json();
-                
-                if (result.error) {
-                    status.innerHTML = `<span class="error">${result.error}</span>`;
-                } else {
-                    status.innerHTML = `<span class="success">${result.message}</span>`;
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) {
+            handleFiles(e.dataTransfer.files[0]);
+        }
+    });
+
+    fileInput.addEventListener('change', () => {
+        if (fileInput.files.length) {
+            handleFiles(fileInput.files[0]);
+        }
+    });
+
+    function handleFiles(file) {
+        if (!file.name.match(/\.(xlsx|xls)$/i)) {
+            alert('Please select an Excel file.');
+            return;
+        }
+
+        fileName.textContent = file.name;
+        fileSize.textContent = (file.size / 1024).toFixed(1) + ' KB';
+        fileInfo.style.display = 'flex';
+        dropZone.style.display = 'none';
+        uploadBtn.disabled = false;
+        statusMsg.style.display = 'none';
+    }
+
+    function clearFile() {
+        fileInput.value = '';
+        fileInfo.style.display = 'none';
+        dropZone.style.display = 'flex';
+        uploadBtn.disabled = true;
+        progressContainer.style.display = 'none';
+    }
+
+    uploadForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        uploadBtn.disabled = true;
+        progressContainer.style.display = 'block';
+        statusMsg.style.display = 'none';
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            // Simulated upload progress for better UX
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += Math.random() * 30;
+                if (progress > 90) {
+                    clearInterval(interval);
+                    progress = 90;
                 }
-            } catch (err) {
-                status.innerHTML = '<span class="error">An error occurred during upload.</span>';
+                updateProgress(progress);
+            }, 500);
+
+            const response = await fetch('/report-uploader', { // In real app, this would be a POST to /upload
+                method: 'POST',
+                body: formData
+            });
+            
+            clearInterval(interval);
+            updateProgress(100);
+
+            const result = await response.json();
+            
+            statusMsg.style.display = 'block';
+            if (response.ok) {
+                statusMsg.className = 'status-msg status-success';
+                statusMsg.innerHTML = `<i class="fas fa-check-circle"></i> ${result.message || 'File processed successfully!'}`;
+            } else {
+                statusMsg.className = 'status-msg status-error';
+                statusMsg.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${result.error || 'Upload failed.'}`;
             }
-        };
-    </script>
-</body>
-</html>
+        } catch (err) {
+            statusMsg.style.display = 'block';
+            statusMsg.className = 'status-msg status-error';
+            statusMsg.innerHTML = '<i class="fas fa-exclamation-triangle"></i> An error occurred during processing.';
+        } finally {
+            uploadBtn.disabled = false;
+        }
+    });
+
+    function updateProgress(percent) {
+        const p = Math.min(100, Math.round(percent));
+        progressFill.style.width = p + '%';
+        progressPercent.textContent = p + '%';
+    }
+</script>
+{% endblock %}

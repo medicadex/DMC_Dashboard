@@ -39,6 +39,9 @@ class AuthService:
                 raise Exception(f"Offline access expired (Limit: {self.OFFLINE_GRACE_DAYS} days). Please connect to the internet to re-authorize.")
 
         # Check if password is bcrypt hashed or plain (for migration)
+        # Requirement: Password must be lowercase for comparison
+        password = str(password).lower()
+        
         # Using mapping-style access for Row/Dict compatibility
         stored_pwd = user.get('password_hash') if isinstance(user, dict) else (user._mapping.get('password_hash') if hasattr(user, '_mapping') else user['password_hash'])
         is_valid = False

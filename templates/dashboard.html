@@ -255,6 +255,16 @@
     const autocompleteList = document.getElementById('autocompleteResults');
     let debounceTimer;
 
+    // Check for account parameter on load
+    document.addEventListener('DOMContentLoaded', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const acc = urlParams.get('acc');
+        if (acc) {
+            searchInput.value = acc;
+            document.getElementById('searchBtn').click();
+        }
+    });
+
     searchInput.addEventListener('input', (e) => {
         clearTimeout(debounceTimer);
         const query = e.target.value.trim();

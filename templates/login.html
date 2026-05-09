@@ -3,11 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - DMC Management Suite</title>
+    <title>Login - IE DMC Suite</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- FontAwesome for the Eye Icon -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+        :root[data-theme="dark"] {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-color: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --primary-color: #f32c91;
+            --primary-hover: #e00c7e;
+            --danger-color: #ef4444;
+        }
+
         body {
             display: flex;
             align-items: center;
@@ -17,68 +27,75 @@
             background-color: var(--bg-color);
             color: var(--text-color);
             font-family: 'Inter', sans-serif;
-            transition: background-color 0.3s ease;
         }
 
         .login-card {
             background-color: var(--card-bg);
             padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 8px 32px var(--shadow-color);
+            border-radius: 16px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3);
             width: 100%;
-            max-width: 400px;
+            max-width: 420px;
             border: 1px solid var(--border-color);
+            text-align: center;
         }
 
         .logo-container {
-            text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 35px;
         }
 
-        /* Replace with actual logo or text */
+        .logo-img {
+            height: 60px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+        }
+
         .logo-text {
-            font-size: 24px;
-            font-weight: 700;
+            font-size: 26px;
+            font-weight: 800;
             color: var(--primary-color);
             margin: 0;
-            letter-spacing: -0.5px;
+            letter-spacing: -1px;
         }
         
         .logo-subtext {
             font-size: 14px;
             color: var(--text-muted);
             margin-top: 5px;
+            font-weight: 500;
         }
 
         .form-group {
-            margin-bottom: 20px;
-            position: relative;
+            margin-bottom: 22px;
+            text-align: left;
         }
 
         .form-group label {
             display: block;
             margin-bottom: 8px;
-            font-size: 14px;
-            font-weight: 500;
-            color: var(--text-color);
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .form-control {
             width: 100%;
-            padding: 12px 15px;
-            background-color: var(--input-bg);
+            padding: 14px 16px;
+            background-color: var(--bg-color);
             border: 1px solid var(--border-color);
-            border-radius: 8px;
+            border-radius: 10px;
             color: var(--text-color);
             font-size: 15px;
-            transition: border-color 0.2s, box-shadow 0.2s;
+            transition: all 0.2s;
             box-sizing: border-box;
+            outline: none;
         }
 
         .form-control:focus {
-            outline: none;
             border-color: var(--primary-color);
-            box-shadow: 0 0 0 3px rgba(43, 87, 151, 0.2);
+            box-shadow: 0 0 0 4px rgba(243, 44, 145, 0.1);
         }
 
         .password-wrapper {
@@ -87,7 +104,7 @@
 
         .toggle-password {
             position: absolute;
-            right: 15px;
+            right: 16px;
             top: 50%;
             transform: translateY(-50%);
             cursor: pointer;
@@ -96,82 +113,56 @@
         }
 
         .toggle-password:hover {
-            color: var(--text-color);
-        }
-
-        .checkbox-group {
-            display: flex;
-            align-items: center;
-            margin-bottom: 25px;
-        }
-
-        .checkbox-group input {
-            accent-color: var(--primary-color);
-            width: 16px;
-            height: 16px;
-            margin-right: 10px;
-            cursor: pointer;
-        }
-
-        .checkbox-group label {
-            font-size: 14px;
-            color: var(--text-muted);
-            cursor: pointer;
+            color: var(--primary-color);
         }
 
         .btn-login {
             width: 100%;
-            padding: 14px;
+            padding: 15px;
             background-color: var(--primary-color);
             color: white;
             border: none;
-            border-radius: 8px;
+            border-radius: 10px;
             font-size: 16px;
-            font-weight: 600;
+            font-weight: 700;
             cursor: pointer;
-            transition: background-color 0.2s, transform 0.1s;
+            transition: all 0.2s;
+            margin-top: 10px;
         }
 
         .btn-login:hover {
             background-color: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(243, 44, 145, 0.2);
         }
 
         .btn-login:active {
-            transform: scale(0.98);
+            transform: translateY(0);
         }
 
         .error-message {
-            color: #ef4444;
+            background-color: rgba(239, 68, 68, 0.1);
+            color: var(--danger-color);
+            padding: 12px;
+            border-radius: 8px;
             font-size: 14px;
-            text-align: center;
-            margin-bottom: 15px;
+            margin-bottom: 25px;
+            border: 1px solid rgba(239, 68, 68, 0.2);
             display: none;
+            font-weight: 500;
         }
         
         .error-message.show {
             display: block;
         }
-
-        /* Initial Setup until global.css is loaded properly */
-        :root[data-theme="dark"] {
-            --bg-color: #0f172a;
-            --card-bg: #1e293b;
-            --text-color: #f8fafc;
-            --text-muted: #94a3b8;
-            --input-bg: #0f172a;
-            --border-color: #334155;
-            --primary-color: #3b82f6;
-            --primary-hover: #2563eb;
-            --shadow-color: rgba(0, 0, 0, 0.5);
-        }
-
     </style>
 </head>
 <body>
 
     <div class="login-card">
         <div class="logo-container">
-            <h1 class="logo-text">DMC Suite</h1>
+            <img src="{{ url_for('static', filename='ie_logo.png') }}" alt="IE Logo" class="logo-img">
+            <h1 class="logo-text">IE DMC SUITE</h1>
             <div class="logo-subtext">Enterprise Web Edition</div>
         </div>
 
@@ -179,103 +170,72 @@
 
         <form id="loginForm">
             <div class="form-group">
-                <label for="username">Username</label>
-                <input type="text" id="username" class="form-control" placeholder="Enter your username" required>
+                <label for="username">Staff Username</label>
+                <input type="text" id="username" class="form-control" placeholder="e.g. jdoe" required>
             </div>
 
             <div class="form-group">
-                <label for="password">Password</label>
+                <label for="password">Security Password</label>
                 <div class="password-wrapper">
-                    <input type="password" id="password" class="form-control" placeholder="Enter your password" required>
-                    <i class="far fa-eye toggle-password" id="togglePassword" title="Show/Hide Password"></i>
+                    <input type="password" id="password" class="form-control" placeholder="••••••••" required>
+                    <i class="far fa-eye toggle-password" id="togglePassword"></i>
                 </div>
             </div>
 
-            <div class="checkbox-group">
-                <input type="checkbox" id="saveCredentials">
-                <label for="saveCredentials">Save Login Credentials</label>
-            </div>
-
-            <button type="submit" class="btn-login" id="loginBtn">Sign In</button>
+            <button type="submit" class="btn-login" id="loginBtn">Authorize Access</button>
         </form>
+        
+        <div style="margin-top: 30px; font-size: 12px; color: var(--text-muted);">
+            &copy; 2026 Ikeja Electric PLC. Internal Use Only.
+        </div>
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const form = document.getElementById('loginForm');
-            const usernameInput = document.getElementById('username');
-            const passwordInput = document.getElementById('password');
-            const togglePassword = document.getElementById('togglePassword');
-            const saveCredentials = document.getElementById('saveCredentials');
-            const errorMsg = document.getElementById('errorMsg');
-            const loginBtn = document.getElementById('loginBtn');
+        const loginForm = document.getElementById('loginForm');
+        const togglePassword = document.getElementById('togglePassword');
+        const passwordInput = document.getElementById('password');
+        const errorMsg = document.getElementById('errorMsg');
+        const loginBtn = document.getElementById('loginBtn');
 
-            // Load saved credentials
-            const savedUsername = localStorage.getItem('dmc_saved_username');
-            const savedPassword = localStorage.getItem('dmc_saved_password');
-            if (savedUsername && savedPassword) {
-                usernameInput.value = savedUsername;
-                passwordInput.value = savedPassword;
-                saveCredentials.checked = true;
-            }
+        togglePassword.addEventListener('click', () => {
+            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordInput.setAttribute('type', type);
+            togglePassword.classList.toggle('fa-eye');
+            togglePassword.classList.toggle('fa-eye-slash');
+        });
 
-            // Toggle Password Visibility
-            togglePassword.addEventListener('click', () => {
-                const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
-                passwordInput.setAttribute('type', type);
-                togglePassword.classList.toggle('fa-eye');
-                togglePassword.classList.toggle('fa-eye-slash');
-            });
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const password = passwordInput.value;
+            
+            loginBtn.innerText = 'Authorizing...';
+            loginBtn.disabled = true;
+            errorMsg.classList.remove('show');
 
-            // Handle Login Submit
-            form.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                
-                const username = usernameInput.value;
-                const password = passwordInput.value;
-                
-                // Original Button State
-                const originalText = loginBtn.textContent;
-                loginBtn.textContent = 'Authenticating...';
-                loginBtn.disabled = true;
-                errorMsg.classList.remove('show');
+            try {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
 
-                try {
-                    const response = await fetch('/login', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ username, password })
-                    });
+                const data = await response.json();
 
-                    const data = await response.json();
-
-                    if (response.ok && data.success) {
-                        // Handle Save Credentials
-                        if (saveCredentials.checked) {
-                            localStorage.setItem('dmc_saved_username', username);
-                            localStorage.setItem('dmc_saved_password', password);
-                        } else {
-                            localStorage.removeItem('dmc_saved_username');
-                            localStorage.removeItem('dmc_saved_password');
-                        }
-
-                        // Redirect to Dashboard
-                        window.location.href = data.redirect;
-                    } else {
-                        errorMsg.textContent = data.error || 'Authentication failed. Please check credentials.';
-                        errorMsg.classList.add('show');
-                        loginBtn.textContent = originalText;
-                        loginBtn.disabled = false;
-                    }
-                } catch (err) {
-                    errorMsg.textContent = 'Network error. Cannot reach the server.';
+                if (data.success) {
+                    window.location.href = '/dashboard';
+                } else {
+                    errorMsg.innerText = data.message || 'Authentication failed. Please try again.';
                     errorMsg.classList.add('show');
-                    loginBtn.textContent = originalText;
-                    loginBtn.disabled = false;
                 }
-            });
+            } catch (err) {
+                errorMsg.innerText = 'Network error. Please check your connection.';
+                errorMsg.classList.add('show');
+            } finally {
+                loginBtn.innerText = 'Authorize Access';
+                loginBtn.disabled = false;
+            }
         });
     </script>
 </body>

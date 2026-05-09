@@ -48,7 +48,8 @@ class StaffRepository:
 
     def get_user_by_username(self, username: str):
         with self._get_active_engine().connect() as conn:
-            query = text("SELECT id, username, staff_id, password_hash, full_name, role, email, last_online_login FROM staff WHERE username = :u")
+            # Case-insensitive username lookup using LOWER()
+            query = text("SELECT id, username, staff_id, password_hash, full_name, role, email, last_online_login FROM staff WHERE LOWER(username) = LOWER(:u)")
             row = conn.execute(query, {"u": username}).fetchone()
             return self._process_user_row(row)
 
@@ -170,7 +171,8 @@ class StaffRepository:
 
     def get_user_full_by_username(self, username: str):
         with self._get_active_engine().connect() as conn:
-            query = text("SELECT id, username, staff_id, password_hash, full_name, role, email, last_online_login FROM staff WHERE username = :u")
+            # Case-insensitive lookup
+            query = text("SELECT id, username, staff_id, password_hash, full_name, role, email, last_online_login FROM staff WHERE LOWER(username) = LOWER(:u)")
             row = conn.execute(query, {"u": username}).fetchone()
             return self._process_user_row(row)
 

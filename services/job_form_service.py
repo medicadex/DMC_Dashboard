@@ -86,20 +86,33 @@ class JobFormService:
 
         joins = """
             LEFT JOIN (SELECT account_number, SUM(amount_paid) as total_payments FROM all_payments GROUP BY account_number) p ON c.account_number = p.account_number
-            LEFT JOIN (SELECT account_number, SUM(discounted_amount) as total_discounts FROM discounts WHERE status = 'approved' GROUP BY account_number) d ON c.account_number = d.account_number
-            LEFT JOIN (SELECT account_number, SUM(adjustment_amount) as total_adjustments FROM adjustments WHERE status = 'approved' GROUP BY account_number) a ON c.account_number = a.account_number
+            LEFT JOIN (SELECT account_number, MAX(NULLIF(date_of_payment, '0000-00-00')) as last_payment_date FROM collections GROUP BY account_number) coll ON c.account_number = coll.account_number
+            LEFT JOIN (SELECT account_number, SUM(amount_paid) as total_other FROM other_payments GROUP BY account_number) o ON c.account_number = o.account_number
+            LEFT JOIN (
+                SELECT account_number, 
+                    SUM(CASE WHEN LOWER(status) != 'rejected' THEN discounted_amount ELSE 0 END) as total_discounts_display,
+                    SUM(CASE WHEN LOWER(status) = 'approved' OR LOWER(user_who_approved) LIKE '%okoye%' OR LOWER(user_who_approved) LIKE '%forstinus%' THEN discounted_amount ELSE 0 END) as total_discounts_approved
+                FROM discounts GROUP BY account_number
+            ) d ON c.account_number = d.account_number
+            LEFT JOIN (
+                SELECT account_number, 
+                    SUM(CASE WHEN LOWER(status) != 'rejected' THEN adjustment_amount ELSE 0 END) as total_adjustments_display,
+                    SUM(CASE WHEN LOWER(status) = 'approved' OR LOWER(user_who_approved_adjustment) LIKE '%okoye%' OR LOWER(user_who_approved_adjustment) LIKE '%forstinus%' THEN adjustment_amount ELSE 0 END) as total_adjustments_approved
+                FROM adjustments GROUP BY account_number
+            ) a ON c.account_number = a.account_number
         """
         
         pp_cond = """
             CASE 
                 WHEN (COALESCE(p.total_payments, 0) >= 0.3 * COALESCE(c.closing_balance, 0)) 
-                AND (COALESCE(c.closing_balance, 0) - COALESCE(p.total_payments, 0) - COALESCE(d.total_discounts, 0) + COALESCE(a.total_adjustments, 0) > 0) 
+                AND (COALESCE(c.closing_balance, 0) - COALESCE(p.total_payments, 0) - COALESCE(d.total_discounts_approved, 0) - COALESCE(a.total_adjustments_approved, 0) > 0) 
                 THEN 'Yes' ELSE 'No' 
             END
         """
         
-        if ftype == "Only Payment Plan":
+        if ftype == "Defaulted payment Plan":
             filter_clauses.append(f"{pp_cond} = 'Yes'")
+            filter_clauses.append("(coll.last_payment_date IS NULL OR DATEDIFF(CURDATE(), coll.last_payment_date) > 30)")
         elif ftype == "Exclude Payment Plan":
             filter_clauses.append(f"{pp_cond} = 'No'")
             
@@ -121,8 +134,12 @@ class JobFormService:
                 SELECT 
                     c.*, 
                     COALESCE(p.total_payments, 0) as total_payments,
-                    COALESCE(d.total_discounts, 0) as total_discounts_valid,
-                    COALESCE(a.total_adjustments, 0) as total_adjustments_valid
+                    COALESCE(o.total_other, 0) as total_other,
+                    COALESCE(d.total_discounts_display, 0) as discount,
+                    COALESCE(d.total_discounts_approved, 0) as discount_approved,
+                    COALESCE(a.total_adjustments_display, 0) as adjustment,
+                    COALESCE(a.total_adjustments_approved, 0) as adjustment_approved,
+                    coll.last_payment_date
                 FROM customers c 
                 {joins}
                 {where_sql}
@@ -136,8 +153,33 @@ class JobFormService:
             val_df = val_df.sort_values('account_number').groupby('account_number').last().reset_index()
             df = df.merge(val_df, on='account_number', how='left')
 
-            df['outstanding_balance'] = df['closing_balance'].fillna(0) - df['total_payments'] - df['total_discounts_valid'] - df['total_adjustments_valid']
+            # Dynamic Outstanding Balance matches dashboard model (Using approved only)
+            df['outstanding_balance'] = df['closing_balance'].fillna(0) - df['total_payments'] - df['discount_approved'] - df['adjustment_approved']
+            
+            # Consolidated Payments for Display mapped to pos_other_payments
+            df['pos_other_payments'] = df['total_payments'] + df['total_other']
+            
+            # Payment Plan (Yes/No) matches dashboard model (Using approved only)
             df['payment_plan'] = df.apply(lambda r: 'Yes' if (r['total_payments'] >= 0.3 * (r['closing_balance'] or 0)) and (r['outstanding_balance'] > 0) else 'No', axis=1)
+
+            # Payment Plan Status (Active/Defaulted/No Plan)
+            def calculate_pp_status(row):
+                if row['payment_plan'] == 'No':
+                    return "No Plan"
+                
+                last_pay = row['last_payment_date']
+                if pd.isna(last_pay):
+                    return "Defaulted"
+                
+                last_pay_ts = pd.to_datetime(last_pay)
+                if pd.isna(last_pay_ts):
+                    return "Defaulted"
+                
+                today = pd.Timestamp.now().normalize()
+                diff = (today - last_pay_ts.normalize()).days
+                return "Active" if diff <= 30 else "Defaulted"
+
+            df['payment_plan_status'] = df.apply(calculate_pp_status, axis=1)
 
             final_cols = [c for c in out_cols if c in df.columns]
             return df[final_cols]

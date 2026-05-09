@@ -224,7 +224,10 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    window.location.href = '/dashboard';
+                    // Check for next parameter in URL
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const nextUrl = urlParams.get('next') || '/dashboard';
+                    window.location.href = nextUrl;
                 } else {
                     errorMsg.innerText = data.message || 'Authentication failed. Please try again.';
                     errorMsg.classList.add('show');

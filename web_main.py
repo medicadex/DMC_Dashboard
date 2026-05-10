@@ -35,7 +35,7 @@ staff_repo = StaffRepository(engine)
 validation_service = ValidationService(engine)
 account_service = AccountService(engine, staff_repo, validation_service)
 job_form_service = JobFormService(engine)
-session_manager = SessionManager(timeout_minutes=60)
+session_manager = SessionManager(timeout_minutes=15)
 auth_service = AuthService(staff_repo, session_manager)
 upload_service = UploadService(engine, staff_repo)
 reporting_service = ReportingService(engine, staff_repo)
@@ -43,7 +43,7 @@ admin_report_service = AdminReportService(engine, staff_repo)
 export_service = ExportService(engine)
 
 # Cache busting version
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.1.3"
 
 @app.context_processor
 def inject_version():
@@ -54,6 +54,13 @@ def login_required(f):
     def decorated_function(*args, **kwargs):
         if 'user' not in session:
             return redirect(url_for('login', next=request.url))
+        
+        # Inactivity timeout check
+        if not session_manager.is_session_valid():
+            session.clear()
+            return redirect(url_for('login', next=request.url))
+            
+        session_manager.update_activity()
         return f(*args, **kwargs)
     return decorated_function
 
@@ -63,6 +70,11 @@ def add_header(response):
     Add headers to both force latest IE rendering engine or Chrome Frame,
     and also to cache the rendered page for 0 seconds.
     """
+    # Force no-cache for Service Worker and Manifest to allow updates
+    if request.path.endswith('service-worker.js') or request.path.endswith('manifest.json'):
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+        return response
+
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, post-check=0, pre-check=0, max-age=0'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '-1'

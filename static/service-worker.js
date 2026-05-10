@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dmc-v1.2';
+const CACHE_NAME = 'dmc-v1.3'; // Incremented version
 const ASSETS_TO_CACHE = [
   '/',
   '/dashboard',
@@ -13,6 +13,7 @@ const ASSETS_TO_CACHE = [
 
 // Install Event - Caching Assets
 self.addEventListener('install', (event) => {
+  self.skipWaiting(); // Force the waiting service worker to become the active service worker
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log('Opened cache');
@@ -23,11 +24,17 @@ self.addEventListener('install', (event) => {
 
 // Fetch Event - Serve from Cache, Fallback to Network
 self.addEventListener('fetch', (event) => {
+  // Skip cross-origin requests
+  if (!event.request.url.startsWith(self.location.origin) && !event.request.url.startsWith('https://fonts') && !event.request.url.startsWith('https://cdnjs')) {
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((response) => {
       // Return cache hit, else fetch from network
-      return response || fetch(event.request).catch(() => {
-        // Fallback or offline page can be added here
+      return response || fetch(event.request).then(fetchRes => {
+        return fetchRes;
+      }).catch(() => {
         console.log('Offline: Network request failed');
       });
     })
@@ -36,12 +43,14 @@ self.addEventListener('fetch', (event) => {
 
 // Activate Event - Clean up old caches
 self.addEventListener('activate', (event) => {
+  event.waitUntil(clients.claim()); // Become available to all pages immediately
   const cacheWhitelist = [CACHE_NAME];
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheWhitelist.indexOf(cacheName) === -1) {
+            console.log('Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })

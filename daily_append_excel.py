@@ -128,42 +128,45 @@ class DataUploader:
                     self.log(f"  ⚠ No database columns match for {table_name}")
                     return 0
 
-                df_final = df_mapped[cols_to_insert]
-                staging_table = f"staging_{table_name}"
-                df_final.to_sql(staging_table, conn, if_exists="replace", index=False)
-                
-                cols = list(df_final.columns)
-                unique_col = None
-                if 'transaction_id' in cols: unique_col = 'transaction_id'
-                elif 'receipt_number' in cols: unique_col = 'receipt_number'
-                
-                if unique_col:
-                    # Duplicate check
-                    existing_count_sql = text(f"SELECT COUNT(*) FROM {table_name} WHERE {unique_col} IN (SELECT {unique_col} FROM {staging_table})")
-                    duplicates_count = conn.execute(existing_count_sql).scalar()
+                try:
+                    df_final = df_mapped[cols_to_insert]
+                    staging_table = f"staging_{table_name}"
+                    df_final.to_sql(staging_table, conn, if_exists="replace", index=False)
                     
-                    sql = text(f"""
-                        INSERT INTO {table_name} ({', '.join(cols)}) 
-                        SELECT {', '.join(cols)} FROM {staging_table} s
-                        WHERE NOT EXISTS (
-                            SELECT 1 FROM {table_name} t WHERE t.{unique_col} = s.{unique_col}
-                        )
-                    """)
-                else:
-                    duplicates_count = 0
-                    sql = text(f"INSERT IGNORE INTO {table_name} ({', '.join(cols)}) SELECT {', '.join(cols)} FROM {staging_table}")
+                    cols = list(df_final.columns)
+                    unique_col = None
+                    if 'transaction_id' in cols: unique_col = 'transaction_id'
+                    elif 'receipt_number' in cols: unique_col = 'receipt_number'
                     
-                result = conn.execute(sql)
-                new_records = result.rowcount
-                
-                total_amount = float(df_final['amount_paid'].sum()) if 'amount_paid' in df_final.columns else 0.0
-                
-                self.log(f"  ✅ Processed {len(df_final)} records.")
-                self.log(f"    └ New: {new_records}, Duplicates: {duplicates_count}")
-                if total_amount > 0:
-                    self.log(f"    └ Total Amount: ₦{total_amount:,.2f}")
-                
-                return new_records
+                    if unique_col:
+                        # Duplicate check
+                        existing_count_sql = text(f"SELECT COUNT(*) FROM {table_name} WHERE {unique_col} IN (SELECT {unique_col} FROM {staging_table})")
+                        duplicates_count = conn.execute(existing_count_sql).scalar()
+                        
+                        sql = text(f"""
+                            INSERT INTO {table_name} ({', '.join(cols)}) 
+                            SELECT {', '.join(cols)} FROM {staging_table} s
+                            WHERE NOT EXISTS (
+                                SELECT 1 FROM {table_name} t WHERE t.{unique_col} = s.{unique_col}
+                            )
+                        """)
+                    else:
+                        duplicates_count = 0
+                        sql = text(f"INSERT IGNORE INTO {table_name} ({', '.join(cols)}) SELECT {', '.join(cols)} FROM {staging_table}")
+                        
+                    result = conn.execute(sql)
+                    new_records = result.rowcount
+                    
+                    total_amount = float(df_final['amount_paid'].sum()) if 'amount_paid' in df_final.columns else 0.0
+                    
+                    self.log(f"  ✅ Processed {len(df_final)} records.")
+                    self.log(f"    └ New: {new_records}, Duplicates: {duplicates_count}")
+                    if total_amount > 0:
+                        self.log(f"    └ Total Amount: ₦{total_amount:,.2f}")
+                    
+                    return new_records
+                finally:
+                    conn.execute(text(f"DROP TABLE IF EXISTS staging_{table_name}"))
                 
         except Exception as e:
             self.log(f"  ❌ Error: {str(e)}")

@@ -11,15 +11,49 @@
 </div>
 
 <!-- EXECUTIVE METRICS LAYOUT -->
-<div class="dashboard-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 25px;">
+<style>
+    .dashboard-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+        margin-top: 10px;
+    }
+    .dashboard-table th {
+        text-align: left;
+        color: var(--text-muted);
+        border-bottom: 1px solid var(--border-color);
+        padding: 8px 5px;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.05em;
+    }
+    .dashboard-table td {
+        padding: 10px 5px;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .bu-column {
+        width: 150px;
+        font-weight: 600;
+        color: var(--text-color);
+    }
+    .amount-column {
+        text-align: right;
+        font-family: 'JetBrains Mono', monospace; /* Optional: for better number alignment */
+        font-weight: 700;
+        color: var(--primary-color);
+    }
+</style>
+
+<div class="dashboard-grid" style="display: grid; grid-template-columns: 1fr 1.5fr 1fr; gap: 20px; margin-bottom: 25px;">
     <!-- Daily Table -->
     <div class="card" style="padding: 15px;">
         <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 2px solid var(--border-color); padding-bottom: 8px; font-size: 14px;">📅 Daily Recovery (Today)</h3>
-        <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 10px;">
+        <table class="dashboard-table">
             <thead>
-                <tr style="text-align: left; color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
-                    <th style="padding: 5px;">Business Unit</th>
-                    <th style="padding: 5px; text-align: right;">Amount (₦)</th>
+                <tr>
+                    <th class="bu-column">Business Unit</th>
+                    <th style="text-align: right;">Amount (₦)</th>
                 </tr>
             </thead>
             <tbody id="tbl-daily"><tr><td colspan="2" style="text-align:center; padding:10px;">Loading...</td></tr></tbody>
@@ -29,27 +63,29 @@
 
     <!-- Weekly Table -->
     <div class="card" style="padding: 15px;">
-        <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 2px solid var(--border-color); padding-bottom: 8px; font-size: 14px;">📆 Weekly Recovery (WTD)</h3>
-        <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 10px;">
-            <thead>
-                <tr style="text-align: left; color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
-                    <th style="padding: 5px;">Business Unit</th>
-                    <th style="padding: 5px; text-align: right;">Amount (₦)</th>
-                </tr>
-            </thead>
-            <tbody id="tbl-weekly"><tr><td colspan="2" style="text-align:center; padding:10px;">Loading...</td></tr></tbody>
-            <tfoot id="foot-weekly" style="border-top: 2px solid var(--border-color); font-weight: 800;"></tfoot>
-        </table>
+        <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 2px solid var(--border-color); padding-bottom: 8px; font-size: 14px;">📆 Weekly Performance Breakdown</h3>
+        <div style="overflow-x: auto;">
+            <table class="dashboard-table" style="min-width: 450px;">
+                <thead>
+                    <tr>
+                        <th class="bu-column">Business Unit</th>
+                        <!-- Weeks will be injected here -->
+                    </tr>
+                </thead>
+                <tbody id="tbl-weekly"><tr><td colspan="10" style="text-align:center; padding:10px;">Loading...</td></tr></tbody>
+                <tfoot id="foot-weekly" style="border-top: 2px solid var(--border-color); font-weight: 800;"></tfoot>
+            </table>
+        </div>
     </div>
 
     <!-- Monthly Table -->
     <div class="card" style="padding: 15px;">
         <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 2px solid var(--border-color); padding-bottom: 8px; font-size: 14px;">📊 Monthly Recovery</h3>
-        <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 10px;">
+        <table class="dashboard-table">
             <thead>
-                <tr style="text-align: left; color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
-                    <th style="padding: 5px;">Business Unit</th>
-                    <th style="padding: 5px; text-align: right;">Amount (₦)</th>
+                <tr>
+                    <th class="bu-column">Business Unit</th>
+                    <th style="text-align: right;">Amount (₦)</th>
                 </tr>
             </thead>
             <tbody id="tbl-monthly"><tr><td colspan="2" style="text-align:center; padding:10px;">Loading...</td></tr></tbody>
@@ -94,36 +130,84 @@
 <script>
 async function loadDashboardStats() {
     try {
-        const res = await fetch('/api/dashboard-stats');
+        const res = await fetch(`/api/dashboard-stats?_=${new Date().getTime()}`);
         const json = await res.json();
         if(json.success) {
             const data = json.data;
             
-            // Render BU Tables
+            // Render Standard BU Tables (Daily/Monthly)
             const renderBUTable = (tbodyId, tfootId, arr) => {
                 const tbody = document.getElementById(tbodyId);
                 const tfoot = document.getElementById(tfootId);
-                if(!arr || arr.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; padding:10px; color:var(--text-muted);">No data</td></tr>';
-                    tfoot.innerHTML = '';
-                    return;
-                }
                 
                 let total = 0;
                 tbody.innerHTML = arr.map(r => {
                     total += r.total;
                     return `
-                        <tr style="border-bottom: 1px solid var(--border-color);">
-                            <td style="padding: 8px 5px; font-weight: 500;">${r.bu}</td>
-                            <td style="padding: 8px 5px; text-align: right; color: var(--primary-color); font-weight: 700;">₦ ${Number(r.total).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+                        <tr>
+                            <td class="bu-column">${r.bu}</td>
+                            <td class="amount-column">₦ ${Number(r.total).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
                         </tr>
                     `;
                 }).join('');
                 
                 tfoot.innerHTML = `
-                    <tr>
-                        <td style="padding: 12px 5px;">TOTAL RECOVERY</td>
-                        <td style="padding: 12px 5px; text-align: right; color: var(--primary-color);">₦ ${Number(total).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+                    <tr style="background: rgba(243, 44, 145, 0.05);">
+                        <td class="bu-column" style="text-transform: uppercase; font-size: 0.7rem; color: var(--primary-color);">TOTAL RECOVERY</td>
+                        <td class="amount-column">₦ ${Number(total).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+                    </tr>
+                `;
+            };
+
+            // Render Weekly Breakdown Table (Dynamic Columns)
+            const renderWeeklyTable = (breakdown) => {
+                const tbody = document.getElementById('tbl-weekly');
+                const tfoot = document.getElementById('foot-weekly');
+                const thead = tbody.closest('table').querySelector('thead tr');
+                
+                if(!breakdown || breakdown.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:10px; color:var(--text-muted);">No weekly data available</td></tr>';
+                    return;
+                }
+
+                const weeks = breakdown.map(w => w.week_label);
+                
+                // Update Headers
+                thead.innerHTML = `
+                    <th class="bu-column">Business Unit</th>
+                    ${weeks.map(w => `<th style="text-align: right; padding: 8px 5px;">${w}</th>`).join('')}
+                    <th style="text-align: right; padding: 8px 5px;">Total</th>
+                `;
+                
+                const allBus = breakdown[0].stats.map(s => s.bu);
+                let grandTotal = 0;
+                let weekTotals = weeks.reduce((acc, w) => ({...acc, [w]: 0}), {});
+
+                tbody.innerHTML = allBus.map(bu => {
+                    let rowTotal = 0;
+                    const weekCells = breakdown.map(w => {
+                        const buStat = w.stats.find(s => s.bu === bu);
+                        const val = buStat ? buStat.total : 0;
+                        rowTotal += val;
+                        weekTotals[w.week_label] += val;
+                        return `<td class="amount-column" style="color: ${val > 0 ? 'var(--primary-color)' : 'var(--text-muted)'}; font-weight: ${val > 0 ? '700' : '400'}; opacity: ${val > 0 ? '1' : '0.4'};">${val > 0 ? '₦' + Number(val).toLocaleString(undefined, {maximumFractionDigits:0}) : '-'}</td>`;
+                    }).join('');
+                    
+                    grandTotal += rowTotal;
+                    return `
+                        <tr>
+                            <td class="bu-column">${bu}</td>
+                            ${weekCells}
+                            <td class="amount-column">₦ ${Number(rowTotal).toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                        </tr>
+                    `;
+                }).join('');
+                
+                tfoot.innerHTML = `
+                    <tr style="background: rgba(243, 44, 145, 0.05);">
+                        <td class="bu-column" style="text-transform: uppercase; font-size: 0.7rem; color: var(--primary-color);">TOTAL</td>
+                        ${weeks.map(w => `<td class="amount-column">${Number(weekTotals[w]).toLocaleString(undefined, {maximumFractionDigits:0})}</td>`).join('')}
+                        <td class="amount-column">₦ ${Number(grandTotal).toLocaleString(undefined, {maximumFractionDigits:0})}</td>
                     </tr>
                 `;
             };
@@ -145,7 +229,7 @@ async function loadDashboardStats() {
             };
             
             renderBUTable('tbl-daily', 'foot-daily', data.daily_bu);
-            renderBUTable('tbl-weekly', 'foot-weekly', data.weekly_bu);
+            renderWeeklyTable(data.weekly_breakdown);
             renderBUTable('tbl-monthly', 'foot-monthly', data.monthly_bu);
             
             renderOfficerTable('tbl-top-officers', data.top_dmo);

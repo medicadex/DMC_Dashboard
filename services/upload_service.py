@@ -122,25 +122,27 @@ class UploadService:
                 df_final = df_mapped[cols_to_insert]
                 staging_table = f"staging_{table_name}_{uuid.uuid4().hex[:8]}"
                 
-                # ... (rest of the logic remains similar but using local_engine)
-                num_chunks = (len(df_final) // chunk_size) + 1
-                for i in range(num_chunks):
-                    start_idx = i * chunk_size
-                    end_idx = min((i + 1) * chunk_size, len(df_final))
-                    if start_idx >= end_idx: break
-                    chunk = df_final.iloc[start_idx:end_idx]
-                    chunk.to_sql(staging_table, conn, if_exists="replace" if i == 0 else "append", index=False)
-                    if progress_callback: progress_callback(int(((i + 1) / num_chunks) * 100))
+                try:
+                    # ... (rest of the logic remains similar but using local_engine)
+                    num_chunks = (len(df_final) // chunk_size) + 1
+                    for i in range(num_chunks):
+                        start_idx = i * chunk_size
+                        end_idx = min((i + 1) * chunk_size, len(df_final))
+                        if start_idx >= end_idx: break
+                        chunk = df_final.iloc[start_idx:end_idx]
+                        chunk.to_sql(staging_table, conn, if_exists="replace" if i == 0 else "append", index=False)
+                        if progress_callback: progress_callback(int(((i + 1) / num_chunks) * 100))
 
-                cols = list(df_final.columns)
-                target_outbox = f"temp_{table_name}" if table_name in ['collections', 'other_payments', 'validation', 'disconnections', 'resolutions', 'discounts', 'adjustments'] else table_name
-                sql = text(f"INSERT IGNORE INTO {target_outbox} ({', '.join(cols)}) SELECT {', '.join(cols)} FROM {staging_table}")
-                result = conn.execute(sql)
-                total_new = result.rowcount
-                total_processed = len(df_final)
-                if 'amount_paid' in df_final.columns:
-                    total_amount = float(df_final['amount_paid'].sum())
-                conn.execute(text(f"DROP TABLE IF EXISTS {staging_table}"))
+                    cols = list(df_final.columns)
+                    target_outbox = f"temp_{table_name}" if table_name in ['collections', 'other_payments', 'validation', 'disconnections', 'resolutions', 'discounts', 'adjustments'] else table_name
+                    sql = text(f"INSERT IGNORE INTO {target_outbox} ({', '.join(cols)}) SELECT {', '.join(cols)} FROM {staging_table}")
+                    result = conn.execute(sql)
+                    total_new = result.rowcount
+                    total_processed = len(df_final)
+                    if 'amount_paid' in df_final.columns:
+                        total_amount = float(df_final['amount_paid'].sum())
+                finally:
+                    conn.execute(text(f"DROP TABLE IF EXISTS {staging_table}"))
 
             # Audit log (Moved outside connection block to prevent SQLite locks)
             self.repo.log_activity(username, "UPLOAD_SUCCESS", f"Table: {table_name}, New: {total_new}", event_type='MAJOR')
@@ -208,23 +210,25 @@ class UploadService:
                 df_final = df_mapped[cols_to_insert]
                 staging_table = f"staging_bulk_{table_name}_{uuid.uuid4().hex[:8]}"
                 
-                # Chunked Transmission
-                num_chunks = (len(df_final) // chunk_size) + 1
-                for i in range(num_chunks):
-                    start_idx = i * chunk_size
-                    end_idx = min((i + 1) * chunk_size, len(df_final))
-                    if start_idx >= end_idx: break
-                    chunk = df_final.iloc[start_idx:end_idx]
-                    chunk.to_sql(staging_table, conn, if_exists="replace" if i == 0 else "append", index=False)
-                    if progress_callback: progress_callback(int(((i + 1) / num_chunks) * 100))
+                try:
+                    # Chunked Transmission
+                    num_chunks = (len(df_final) // chunk_size) + 1
+                    for i in range(num_chunks):
+                        start_idx = i * chunk_size
+                        end_idx = min((i + 1) * chunk_size, len(df_final))
+                        if start_idx >= end_idx: break
+                        chunk = df_final.iloc[start_idx:end_idx]
+                        chunk.to_sql(staging_table, conn, if_exists="replace" if i == 0 else "append", index=False)
+                        if progress_callback: progress_callback(int(((i + 1) / num_chunks) * 100))
 
-                cols = list(df_final.columns)
-                target_outbox = f"temp_{table_name}" if table_name in ['collections', 'other_payments', 'validation', 'disconnections', 'resolutions', 'discounts', 'adjustments'] else table_name
-                sql = text(f"INSERT IGNORE INTO {target_outbox} ({', '.join(cols)}) SELECT {', '.join(cols)} FROM {staging_table}")
-                result = conn.execute(sql)
-                new_records = result.rowcount
-                total_len = len(df_final)
-                conn.execute(text(f"DROP TABLE IF EXISTS {staging_table}"))
+                    cols = list(df_final.columns)
+                    target_outbox = f"temp_{table_name}" if table_name in ['collections', 'other_payments', 'validation', 'disconnections', 'resolutions', 'discounts', 'adjustments'] else table_name
+                    sql = text(f"INSERT IGNORE INTO {target_outbox} ({', '.join(cols)}) SELECT {', '.join(cols)} FROM {staging_table}")
+                    result = conn.execute(sql)
+                    new_records = result.rowcount
+                    total_len = len(df_final)
+                finally:
+                    conn.execute(text(f"DROP TABLE IF EXISTS {staging_table}"))
 
             # Audit log (Moved outside connection block to prevent SQLite locks)
             self.repo.log_activity(username, "BULK_UPLOAD_SUCCESS", f"Table: {table_name}, New: {new_records}", event_type='MAJOR')

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dmc-v1.3'; // Incremented version
+const CACHE_NAME = 'dmc-v1.4'; // Increment version to force update
 const ASSETS_TO_CACHE = [
   '/',
   '/dashboard',
@@ -13,10 +13,11 @@ const ASSETS_TO_CACHE = [
 
 // Install Event - Caching Assets
 self.addEventListener('install', (event) => {
-  self.skipWaiting(); // Force the waiting service worker to become the active service worker
+  console.log('SW: Installing v1.4');
+  self.skipWaiting(); 
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('Opened cache');
+      console.log('SW: Opened cache');
       return cache.addAll(ASSETS_TO_CACHE);
     })
   );
@@ -24,18 +25,27 @@ self.addEventListener('install', (event) => {
 
 // Fetch Event - Serve from Cache, Fallback to Network
 self.addEventListener('fetch', (event) => {
-  // Skip cross-origin requests
-  if (!event.request.url.startsWith(self.location.origin) && !event.request.url.startsWith('https://fonts') && !event.request.url.startsWith('https://cdnjs')) {
+  if (event.request.method !== 'GET') return;
+
+  // Skip cross-origin requests unless they are fonts/icons
+  if (!event.request.url.startsWith(self.location.origin) && 
+      !event.request.url.startsWith('https://fonts') && 
+      !event.request.url.startsWith('https://cdnjs')) {
     return;
   }
 
   event.respondWith(
     caches.match(event.request).then((response) => {
       // Return cache hit, else fetch from network
-      return response || fetch(event.request).then(fetchRes => {
+      if (response) {
+        return response;
+      }
+
+      return fetch(event.request).then(fetchRes => {
         return fetchRes;
-      }).catch(() => {
-        console.log('Offline: Network request failed');
+      }).catch(err => {
+        console.error('SW: Fetch failed:', err);
+        // If it's a navigation request and it failed, we might want to return a cached offline page if we had one
       });
     })
   );
@@ -43,14 +53,15 @@ self.addEventListener('fetch', (event) => {
 
 // Activate Event - Clean up old caches
 self.addEventListener('activate', (event) => {
-  event.waitUntil(clients.claim()); // Become available to all pages immediately
-  const cacheWhitelist = [CACHE_NAME];
+  console.log('SW: Activating and clearing old caches');
+  event.waitUntil(clients.claim()); 
+  
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
-          if (cacheWhitelist.indexOf(cacheName) === -1) {
-            console.log('Deleting old cache:', cacheName);
+          if (cacheName !== CACHE_NAME) {
+            console.log('SW: Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })

@@ -315,9 +315,9 @@
                 </div>
                 
                 <div style="display: flex; align-items: center; gap: 20px;">
-                    <div id="connectionStatus" style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--success-color);">
-                        <i class="fas fa-circle" style="font-size: 8px;"></i>
-                        <span>System Online</span>
+                    <div id="userWelcome" style="display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--text-color); font-weight: 500;">
+                        <span style="color: var(--text-muted);">Welcome,</span>
+                        <span style="color: var(--primary-color); font-weight: 700;">{{ session['user']['full_name'] or session['user']['username'] }}</span>
                     </div>
                     <button class="theme-toggle" id="themeToggleBtn" title="Toggle Theme">
                         <i class="fas fa-moon"></i>
@@ -333,34 +333,21 @@
     </div>
 
     <script>
-        // --- Service Worker Registration for PWA ---
+        // --- Actively Unregister All Service Workers to Force Clean Updates ---
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/service-worker.js')
-                    .then(reg => {
-                        console.log('Service Worker registered:', reg.scope);
-                        
-                        // Check for updates periodically
-                        reg.addEventListener('updatefound', () => {
-                            const newWorker = reg.installing;
-                            newWorker.addEventListener('statechange', () => {
-                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                    // New version available, notify user or reload
-                                    console.log('New version found! Reloading...');
-                                    window.location.reload();
-                                }
-                            });
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+                if (registrations.length > 0) {
+                    console.log('SW: Found active workers. Unregistering all for version update...');
+                    for(let registration of registrations) {
+                        registration.unregister();
+                    }
+                    // Optional: clear cache as well from client side
+                    if ('caches' in window) {
+                        caches.keys().then(names => {
+                            for (let name of names) caches.delete(name);
                         });
-                    })
-                    .catch(err => console.log('Service Worker registration failed:', err));
-            });
-
-            // Ensure the page reloads when the service worker controller changes
-            let refreshing = false;
-            navigator.serviceWorker.addEventListener('controllerchange', () => {
-                if (!refreshing) {
-                    window.location.reload();
-                    refreshing = true;
+                    }
+                    setTimeout(() => window.location.reload(), 500);
                 }
             });
         }

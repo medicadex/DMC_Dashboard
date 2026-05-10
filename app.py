@@ -2,7 +2,7 @@ import sys
 import threading
 import time
 import os
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, session
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, session, make_response, Response
 from werkzeug.utils import secure_filename
 from db_utils import get_db_engine
 from datetime import datetime
@@ -43,7 +43,8 @@ admin_report_service = AdminReportService(engine, staff_repo)
 export_service = ExportService(engine)
 
 # Cache busting version
-APP_VERSION = "1.1.4"
+APP_VERSION = "1.1.7"
+ENCRYPTION_SECRET = os.getenv("ENCRYPTION_SECRET")
 
 @app.context_processor
 def inject_version():
@@ -114,6 +115,7 @@ def logout():
 def dashboard():
     return render_template('dashboard.html', active_page='dashboard')
 
+# Rest of the routes restored here...
 @app.route('/job-form')
 @login_required
 def job_form():
@@ -177,8 +179,13 @@ def serve_manifest():
     return send_from_directory(os.path.join(app.root_path, 'static'), 'manifest.json')
 
 @app.route('/service-worker.js')
-def serve_sw():
-    return send_from_directory(os.path.join(app.root_path, 'static'), 'service-worker.js')
+def service_worker():
+    # Return a script that simply unregisters itself
+    content = "self.registration.unregister().then(() => self.clients.matchAll().then(c => c.forEach(cl => cl.navigate(cl.url))));"
+    resp = Response(content, mimetype='application/javascript')
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+    resp.headers['Clear-Site-Data'] = '"cache", "storage"'
+    return resp
 
 # --- API ENDPOINTS ---
 
@@ -188,63 +195,83 @@ def get_dashboard_stats():
     try:
         from sqlalchemy import text
         from datetime import datetime, timedelta
+        import math
         
         now = datetime.now()
         today_start = now.strftime('%Y-%m-%d 00:00:00')
-        week_start = (now - timedelta(days=now.weekday())).strftime('%Y-%m-%d 00:00:00')
         month_start = now.strftime('%Y-%m-01 00:00:00')
         
         data = {}
         with engine.connect() as conn:
-            # 1. Monthly BU
+            # Get all active Business Units first to ensure they all show up
+            res_bus = conn.execute(text("SELECT DISTINCT business_unit FROM customers WHERE business_unit IS NOT NULL AND business_unit != '' ORDER BY business_unit ASC")).fetchall()
+            all_bus = [r[0] for r in res_bus]
+
+            # 1. Monthly BU (Full list)
             sql_monthly = """
-                SELECT IFNULL(c.business_unit, IFNULL(p.business_unit, 'Unknown')) as bu, SUM(p.amount_paid) as total
+                SELECT c.business_unit, SUM(p.amount_paid) as total
                 FROM (
-                    SELECT account_number, amount_paid, date_of_payment, business_unit FROM collections
+                    SELECT account_number, amount_paid, date_of_payment FROM collections
                     UNION ALL
-                    SELECT account_number, amount_paid, date_of_payment, NULL as business_unit FROM other_payments
+                    SELECT account_number, amount_paid, date_of_payment FROM other_payments
                 ) p
-                LEFT JOIN customers c ON p.account_number = c.account_number
+                JOIN customers c ON p.account_number = c.account_number
                 WHERE p.date_of_payment >= :mstart
-                GROUP BY bu ORDER BY bu ASC
+                GROUP BY c.business_unit
             """
             res_m = conn.execute(text(sql_monthly), {"mstart": month_start}).fetchall()
-            data['monthly_bu'] = [{"bu": r[0], "total": float(r[1])} for r in res_m]
+            m_map = {r[0]: float(r[1]) for r in res_m if r[0]}
+            data['monthly_bu'] = [{"bu": bu, "total": m_map.get(bu, 0.0)} for bu in all_bus]
             
-            # 2. Weekly BU
-            sql_weekly = """
-                SELECT IFNULL(c.business_unit, IFNULL(p.business_unit, 'Unknown')) as bu, SUM(p.amount_paid) as total
+            # 2. Weekly Breakdown for current month
+            sql_weeks = """
+                SELECT 
+                    c.business_unit,
+                    FLOOR((DAY(p.date_of_payment) - 1) / 7) + 1 as week_num,
+                    SUM(p.amount_paid) as total
                 FROM (
-                    SELECT account_number, amount_paid, date_of_payment, business_unit FROM collections
+                    SELECT account_number, amount_paid, date_of_payment FROM collections
                     UNION ALL
-                    SELECT account_number, amount_paid, date_of_payment, NULL as business_unit FROM other_payments
+                    SELECT account_number, amount_paid, date_of_payment FROM other_payments
                 ) p
-                LEFT JOIN customers c ON p.account_number = c.account_number
-                WHERE p.date_of_payment >= :wstart
-                GROUP BY bu ORDER BY bu ASC
+                JOIN customers c ON p.account_number = c.account_number
+                WHERE p.date_of_payment >= :mstart
+                GROUP BY c.business_unit, week_num
+                ORDER BY week_num ASC
             """
-            res_w = conn.execute(text(sql_weekly), {"wstart": week_start}).fetchall()
-            data['weekly_bu'] = [{"bu": r[0], "total": float(r[1])} for r in res_w]
+            res_w = conn.execute(text(sql_weeks), {"mstart": month_start}).fetchall()
             
-            # 3. Daily BU
+            # Process weeks
+            weeks_present = sorted(list(set(r[1] for r in res_w)))
+            weekly_data = []
+            for w in weeks_present:
+                bu_totals = {r[0]: float(r[2]) for r in res_w if r[1] == w and r[0]}
+                weekly_data.append({
+                    "week_label": f"Week {int(w)}",
+                    "stats": [{"bu": bu, "total": bu_totals.get(bu, 0.0)} for bu in all_bus]
+                })
+            data['weekly_breakdown'] = weekly_data
+            
+            # 3. Daily BU (Full list)
             sql_daily = """
-                SELECT IFNULL(c.business_unit, IFNULL(p.business_unit, 'Unknown')) as bu, SUM(p.amount_paid) as total
+                SELECT c.business_unit, SUM(p.amount_paid) as total
                 FROM (
-                    SELECT account_number, amount_paid, date_of_payment, business_unit FROM collections
+                    SELECT account_number, amount_paid, date_of_payment FROM collections
                     UNION ALL
-                    SELECT account_number, amount_paid, date_of_payment, NULL as business_unit FROM other_payments
+                    SELECT account_number, amount_paid, date_of_payment FROM other_payments
                 ) p
-                LEFT JOIN customers c ON p.account_number = c.account_number
+                JOIN customers c ON p.account_number = c.account_number
                 WHERE p.date_of_payment >= :dstart
-                GROUP BY bu ORDER BY bu ASC
+                GROUP BY c.business_unit
             """
             res_d = conn.execute(text(sql_daily), {"dstart": today_start}).fetchall()
-            data['daily_bu'] = [{"bu": r[0], "total": float(r[1])} for r in res_d]
+            d_map = {r[0]: float(r[1]) for r in res_d if r[0]}
+            data['daily_bu'] = [{"bu": bu, "total": d_map.get(bu, 0.0)} for bu in all_bus]
             
-            # 4. Top/Bottom Officers Monthly
+            # 4. Top/Bottom Officers Monthly (Cleaned of 'Unknown')
             sql_dmo = """
-                SELECT IFNULL(c.account_officer, 'Unknown') as officer, 
-                       IFNULL(c.business_unit, 'Unknown') as bu,
+                SELECT c.account_officer as officer, 
+                       c.business_unit as bu,
                        SUM(p.amount_paid) as total
                 FROM (
                     SELECT account_number, amount_paid, date_of_payment FROM collections
@@ -253,6 +280,8 @@ def get_dashboard_stats():
                 ) p
                 JOIN customers c ON p.account_number = c.account_number
                 WHERE p.date_of_payment >= :mstart
+                  AND c.business_unit IS NOT NULL AND c.business_unit != ''
+                  AND c.account_officer IS NOT NULL AND c.account_officer != ''
                 GROUP BY officer, bu HAVING total > 0 ORDER BY total DESC
             """
             res_dmo = conn.execute(text(sql_dmo), {"mstart": month_start}).fetchall()
@@ -391,9 +420,16 @@ def job_form_export():
         os.makedirs(export_dir, exist_ok=True)
         filepath = os.path.join(export_dir, filename)
         
+        print(f"Exporting Job Form to: {filepath}")
         df.to_excel(filepath, index=False)
-        return jsonify({"success": True, "filename": filename})
+        
+        if os.path.exists(filepath):
+            return jsonify({"success": True, "filename": filename})
+        else:
+            return jsonify({"error": "File was not created on server"}), 500
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/performance/rank')
@@ -468,10 +504,11 @@ def api_performance_rank():
         if df.empty:
             return jsonify({"officers": [], "units": []})
 
-        # Aggregation logic (same as web_main.py)
+        # --- 1. Recovery Officer Aggregation (Always group by name) ---
         def aggregate_officer(group):
             unique_bus = group['business_unit'].unique()
             bu_display = ", ".join(unique_bus)
+            # Format breakdown for tooltip/display
             breakdown = ", ".join([f"{bu}: ₦{val:,.0f}" for bu, val in zip(group['business_unit'], group['recovery'])])
             return pd.Series({
                 'recovery': group['recovery'].sum(),
@@ -488,26 +525,37 @@ def api_performance_rank():
         else:
             officer_rank = officer_df.sort_values('recovery', ascending=False).head(10).to_dict(orient='records')
         
+        # --- 2. Aggregate Rank (Business Unit View) ---
+        # We always group by Business Unit for the second table to show geographical performance
         def summarize_officers(group):
             unique_offs = group['account_officer'].unique()
+            # The breakdown now shows individual Account Officers/Vendors and their recovery
             breakdown = ", ".join([f"{off}: ₦{val:,.0f}" for off, val in zip(group['account_officer'], group['recovery'])])
             return pd.Series({
                 'recovery': group['recovery'].sum(),
                 'breakdown': breakdown,
-                'is_multi_bu': len(unique_offs) > 1
+                'is_multi_bu': len(unique_offs) > 1 # Flag to show info icon if multiple officers exist in this BU
             })
         
         agg_rank_df = df.groupby('business_unit').apply(summarize_officers).reset_index()
         agg_rank = agg_rank_df.sort_values('recovery', ascending=False).head(5).to_dict(orient='records')
         
+        # Determine the display label for the second table
+        if otype == 'Vendor':
+            rank_label = "Business Unit" # Showing BU performance for Vendors
+        else:
+            rank_label = "Business Unit"
+        
         return jsonify({
             "officers": officer_rank,
             "units": agg_rank,
-            "rank_label": "Business Unit",
+            "rank_label": rank_label,
             "period_start": start,
             "period_end": end
         })
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/payments/preview')
@@ -619,6 +667,7 @@ def api_customers_preview():
         return jsonify([])
 
     try:
+        # Complex query to get all requested fields
         sql = text("""
             SELECT 
                 c.account_number, 
@@ -664,6 +713,7 @@ def api_customers_preview():
                 "onames": tuple(onames)
             }).fetchall()
             
+        # Process results to calculate outstanding balance and payment plan status
         processed_data = []
         today = pd.Timestamp.now().normalize()
         
@@ -672,14 +722,26 @@ def api_customers_preview():
             closing = float(row['closing_balance'] or 0)
             payments = float(row['total_payments'] or 0)
             other = float(row['total_other'] or 0)
+            
+            # Display values (all non-rejected)
+            discounts_display = float(row['total_discounts_display'] or 0)
+            adjustments_display = float(row['total_adjustments_display'] or 0)
+            
+            # Approved values (for calculation)
             discounts_approved = float(row['total_discounts_approved'] or 0)
             adjustments_approved = float(row['total_adjustments_approved'] or 0)
             
+            # 1. Total Payments
             row['total_payments_combined'] = payments + other
-            row['discount'] = float(row['total_discounts_display'] or 0)
-            row['adjustment'] = float(row['total_adjustments_display'] or 0)
+            
+            # UI display fields
+            row['discount'] = discounts_display
+            row['adjustment'] = adjustments_display
+            
+            # 2. Outstanding Balance (Using approved only)
             row['outstanding_balance'] = closing - payments - discounts_approved - adjustments_approved
             
+            # 3. Payment Plan Status (Using approved only)
             is_pp = (payments >= 0.3 * closing) and (row['outstanding_balance'] > 0)
             if not is_pp:
                 row['pp_status'] = "No Plan"
@@ -689,7 +751,8 @@ def api_customers_preview():
                     row['pp_status'] = "Defaulted"
                 else:
                     try:
-                        diff = (today - pd.to_datetime(last_pay).normalize()).days
+                        last_pay_dt = pd.to_datetime(last_pay)
+                        diff = (today - last_pay_dt.normalize()).days
                         row['pp_status'] = "Active" if diff <= 30 else "Defaulted"
                     except:
                         row['pp_status'] = "Defaulted"
@@ -698,6 +761,8 @@ def api_customers_preview():
             
         return jsonify(processed_data)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/customers/export', methods=['POST'])
@@ -712,19 +777,21 @@ def api_customers_export():
         return jsonify({"error": "Missing filters"}), 400
 
     try:
+        # Use the same complex logic as preview for full parity
         sql = text("""
             SELECT 
                 c.account_number, 
                 c.account_name, 
+                c.account_address, 
                 c.business_unit, 
                 c.account_officer, 
                 c.closing_balance,
                 COALESCE(p.total_payments, 0) as total_payments,
                 COALESCE(o.total_other, 0) as total_other,
-                COALESCE(d.total_discounts_approved, 0) as total_discounts_approved,
-                COALESCE(a.total_adjustments_approved, 0) as total_adjustments_approved,
                 COALESCE(d.total_discounts_display, 0) as total_discounts_display,
+                COALESCE(d.total_discounts_approved, 0) as total_discounts_approved,
                 COALESCE(a.total_adjustments_display, 0) as total_adjustments_display,
+                COALESCE(a.total_adjustments_approved, 0) as total_adjustments_approved,
                 coll.last_payment_date
             FROM customers c
             LEFT JOIN (SELECT account_number, SUM(amount_paid) as total_payments FROM all_payments GROUP BY account_number) p ON c.account_number = p.account_number
@@ -732,14 +799,14 @@ def api_customers_export():
             LEFT JOIN (SELECT account_number, SUM(amount_paid) as total_other FROM other_payments GROUP BY account_number) o ON c.account_number = o.account_number
             LEFT JOIN (
                 SELECT account_number, 
-                    SUM(CASE WHEN LOWER(status) = 'approved' OR LOWER(user_who_approved) LIKE '%okoye%' OR LOWER(user_who_approved) LIKE '%forstinus%' THEN discounted_amount ELSE 0 END) as total_discounts_approved,
-                    SUM(CASE WHEN LOWER(status) != 'rejected' THEN discounted_amount ELSE 0 END) as total_discounts_display
+                    SUM(CASE WHEN LOWER(status) != 'rejected' THEN discounted_amount ELSE 0 END) as total_discounts_display,
+                    SUM(CASE WHEN LOWER(status) = 'approved' OR LOWER(user_who_approved) LIKE '%okoye%' OR LOWER(user_who_approved) LIKE '%forstinus%' THEN discounted_amount ELSE 0 END) as total_discounts_approved
                 FROM discounts GROUP BY account_number
             ) d ON c.account_number = d.account_number
             LEFT JOIN (
                 SELECT account_number, 
-                    SUM(CASE WHEN LOWER(status) = 'approved' OR LOWER(user_who_approved_adjustment) LIKE '%okoye%' OR LOWER(user_who_approved_adjustment) LIKE '%forstinus%' THEN adjustment_amount ELSE 0 END) as total_adjustments_approved,
-                    SUM(CASE WHEN LOWER(status) != 'rejected' THEN adjustment_amount ELSE 0 END) as total_adjustments_display
+                    SUM(CASE WHEN LOWER(status) != 'rejected' THEN adjustment_amount ELSE 0 END) as total_adjustments_display,
+                    SUM(CASE WHEN LOWER(status) = 'approved' OR LOWER(user_who_approved_adjustment) LIKE '%okoye%' OR LOWER(user_who_approved_adjustment) LIKE '%forstinus%' THEN adjustment_amount ELSE 0 END) as total_adjustments_approved
                 FROM adjustments GROUP BY account_number
             ) a ON c.account_number = a.account_number
             WHERE c.business_unit IN :bus
@@ -758,7 +825,9 @@ def api_customers_export():
         if df.empty:
             return jsonify({"error": "No data found"}), 404
 
+        # Calculate additional fields for export
         today = pd.Timestamp.now().normalize()
+        
         df['Total Payments'] = df['total_payments'] + df['total_other']
         df['Outstanding Balance'] = df['closing_balance'] - df['total_payments'] - df['total_discounts_approved'] - df['total_adjustments_approved']
         
@@ -773,6 +842,7 @@ def api_customers_export():
 
         df['Payment Plan Status'] = df.apply(get_status, axis=1)
         
+        # Select and rename for professional output
         export_df = df[[
             'account_number', 'account_name', 'business_unit', 'account_officer', 
             'Total Payments', 'Outstanding Balance', 'Payment Plan Status', 'last_payment_date',
@@ -790,9 +860,12 @@ def api_customers_export():
         filename = f"Customer_Listing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         export_dir = os.path.abspath(app.config['UPLOAD_FOLDER'])
         filepath = os.path.join(export_dir, filename)
+        
         export_df.to_excel(filepath, index=False)
         return jsonify({"success": True, "filename": filename})
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 @app.route('/download/<filename>')
@@ -801,5 +874,7 @@ def download_file(filename):
     export_dir = os.path.abspath(app.config['UPLOAD_FOLDER'])
     return send_from_directory(export_dir, filename, as_attachment=True)
 
+
 if __name__ == '__main__':
+    import os
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

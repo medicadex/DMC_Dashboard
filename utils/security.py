@@ -6,9 +6,9 @@ import base64
 from cryptography.fernet import Fernet
 
 class SecurityManager:
-    # A fixed, internal key for basic local data obfuscation
-    # In a real-world scenario, this should be unique per installation
-    _LOCAL_KEY = base64.urlsafe_b64encode(hashlib.sha256(b"DMC_OFFLINE_SECRET").digest())
+    # A secure, internal key for data obfuscation
+    # Fetches from environment variables to conform with 12-Factor App standards
+    _LOCAL_KEY = base64.urlsafe_b64encode(hashlib.sha256(os.getenv("ENCRYPTION_SECRET", "DMC_OFFLINE_SECRET").encode()).digest())
     _FERNET = Fernet(_LOCAL_KEY)
 
     @staticmethod

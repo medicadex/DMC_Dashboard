@@ -355,14 +355,14 @@
             body.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 40px;">No customers found for selected criteria.</td></tr>';
         } else {
             body.innerHTML = data.map(c => {
-                const ppClass = c.pp_status === 'Active' ? 'badge-success' : (c.pp_status === 'Defaulted' ? 'badge-danger' : 'badge-muted');
+                const ppClass = c.pp_status === 'Yes' ? 'badge-success' : 'badge-muted';
                 return `
                     <tr>
                         <td style="font-weight: 600;">${c.account_number || ''}</td>
                         <td title="${c.account_address || ''}">${c.account_name || ''}</td>
                         <td>${c.business_unit || ''}</td>
                         <td>${c.account_officer || ''}</td>
-                        <td>${parseFloat(c.total_payments_combined || 0).toLocaleString()}</td>
+                        <td>${parseFloat(c.total_payments || 0).toLocaleString()}</td>
                         <td style="font-weight: 700; color: var(--primary-color);">${parseFloat(c.outstanding_balance || 0).toLocaleString()}</td>
                         <td><span class="badge ${ppClass}">${c.pp_status}</span></td>
                         <td>${c.last_payment_date || 'None'}</td>

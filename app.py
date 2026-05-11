@@ -579,9 +579,18 @@ def api_payments_preview():
                 p.amount_paid, 
                 c.account_officer, 
                 c.business_unit,
-                c.officer_type
+                c.officer_type,
+                c.account_address,
+                c.undertaking,
+                c.dt_name,
+                c.closing_balance,
+                COALESCE(afs.total_discounts, 0) as total_discount,
+                COALESCE(afs.total_adjustments, 0) as total_adjustment,
+                COALESCE(afs.outstanding_balance, 0) as outstanding_balance,
+                COALESCE(afs.payment_plan, 'No') as payment_plan
             FROM all_payments p
             JOIN customers c ON p.account_number = c.account_number
+            LEFT JOIN account_financial_summary afs ON p.account_number = afs.account_number
             WHERE c.business_unit IN :bus
             AND c.officer_type IN :otypes
             AND c.account_officer IN :onames
@@ -619,15 +628,26 @@ def api_payments_export():
     try:
         sql = text("""
             SELECT 
-                p.date_of_payment as 'Date', 
-                p.account_number as 'Account #', 
-                c.account_name as 'Customer Name', 
-                p.amount_paid as 'Amount (N)', 
-                c.account_officer as 'Officer', 
-                c.business_unit as 'BU',
-                c.officer_type as 'Type'
+                p.account_number as 'Account Number', 
+                c.account_name as 'Account Name', 
+                c.account_address as 'Account Address',
+                c.business_unit as 'Business Unit', 
+                c.undertaking as 'Undertaking', 
+                c.dt_name as 'DT Name', 
+                c.closing_balance as 'Closing Balance',
+                p.amount_paid as 'Amount Paid', 
+                p.date_of_payment as 'Date of Payment', 
+                COALESCE(afs.total_discounts, 0) as 'Total Discount', 
+                COALESCE(afs.total_adjustments, 0) as 'Total Adjustment', 
+                (SELECT SUM(op.amount_paid) FROM other_payments op 
+                 WHERE op.account_number = p.account_number 
+                 AND op.date_of_payment BETWEEN :start AND :end) as 'Other Payment',
+                COALESCE(afs.outstanding_balance, 0) as 'Outstanding Balance', 
+                COALESCE(afs.payment_plan, 'No') as 'Payment Plan (Yes/No)',
+                c.account_officer as 'Account Officer'
             FROM all_payments p
             JOIN customers c ON p.account_number = c.account_number
+            LEFT JOIN account_financial_summary afs ON p.account_number = afs.account_number
             WHERE c.business_unit IN :bus
             AND c.officer_type IN :otypes
             AND c.account_officer IN :onames
@@ -667,38 +687,37 @@ def api_customers_preview():
         return jsonify([])
 
     try:
-        # Complex query to get all requested fields
+        # Complex query to get all requested fields, aligning with main_app.py standards
         sql = text("""
             SELECT 
                 c.account_number, 
                 c.account_name, 
                 c.account_address, 
                 c.business_unit, 
+                c.undertaking,
                 c.account_officer, 
+                c.feeder as feeder_name,
+                c.dt_name,
+                v.phone_number,
                 c.closing_balance,
                 COALESCE(p.total_payments, 0) as total_payments,
-                COALESCE(o.total_other, 0) as total_other,
-                COALESCE(d.total_discounts_display, 0) as total_discounts_display,
                 COALESCE(d.total_discounts_approved, 0) as total_discounts_approved,
-                COALESCE(a.total_adjustments_display, 0) as total_adjustments_display,
                 COALESCE(a.total_adjustments_approved, 0) as total_adjustments_approved,
-                coll.last_payment_date
+                lp.last_payment_date
             FROM customers c
             LEFT JOIN (SELECT account_number, SUM(amount_paid) as total_payments FROM all_payments GROUP BY account_number) p ON c.account_number = p.account_number
-            LEFT JOIN (SELECT account_number, MAX(NULLIF(date_of_payment, '0000-00-00')) as last_payment_date FROM collections GROUP BY account_number) coll ON c.account_number = coll.account_number
-            LEFT JOIN (SELECT account_number, SUM(amount_paid) as total_other FROM other_payments GROUP BY account_number) o ON c.account_number = o.account_number
+            LEFT JOIN (SELECT account_number, MAX(date_of_payment) as last_payment_date FROM collections GROUP BY account_number) lp ON c.account_number = lp.account_number
             LEFT JOIN (
                 SELECT account_number, 
-                    SUM(CASE WHEN LOWER(status) != 'rejected' THEN discounted_amount ELSE 0 END) as total_discounts_display,
                     SUM(CASE WHEN LOWER(status) = 'approved' OR LOWER(user_who_approved) LIKE '%okoye%' OR LOWER(user_who_approved) LIKE '%forstinus%' THEN discounted_amount ELSE 0 END) as total_discounts_approved
                 FROM discounts GROUP BY account_number
             ) d ON c.account_number = d.account_number
             LEFT JOIN (
                 SELECT account_number, 
-                    SUM(CASE WHEN LOWER(status) != 'rejected' THEN adjustment_amount ELSE 0 END) as total_adjustments_display,
                     SUM(CASE WHEN LOWER(status) = 'approved' OR LOWER(user_who_approved_adjustment) LIKE '%okoye%' OR LOWER(user_who_approved_adjustment) LIKE '%forstinus%' THEN adjustment_amount ELSE 0 END) as total_adjustments_approved
                 FROM adjustments GROUP BY account_number
             ) a ON c.account_number = a.account_number
+            LEFT JOIN (SELECT account_number, phone_number FROM validation WHERE id IN (SELECT MAX(id) FROM validation GROUP BY account_number)) v ON c.account_number = v.account_number
             WHERE c.business_unit IN :bus
             AND c.officer_type IN :otypes
             AND c.account_officer IN :onames
@@ -713,49 +732,18 @@ def api_customers_preview():
                 "onames": tuple(onames)
             }).fetchall()
             
-        # Process results to calculate outstanding balance and payment plan status
         processed_data = []
-        today = pd.Timestamp.now().normalize()
-        
         for r in results:
             row = dict(r._mapping)
             closing = float(row['closing_balance'] or 0)
             payments = float(row['total_payments'] or 0)
-            other = float(row['total_other'] or 0)
+            discounts = float(row['total_discounts_approved'] or 0)
+            adjustments = float(row['total_adjustments_approved'] or 0)
             
-            # Display values (all non-rejected)
-            discounts_display = float(row['total_discounts_display'] or 0)
-            adjustments_display = float(row['total_adjustments_display'] or 0)
-            
-            # Approved values (for calculation)
-            discounts_approved = float(row['total_discounts_approved'] or 0)
-            adjustments_approved = float(row['total_adjustments_approved'] or 0)
-            
-            # 1. Total Payments
-            row['total_payments_combined'] = payments + other
-            
-            # UI display fields
-            row['discount'] = discounts_display
-            row['adjustment'] = adjustments_display
-            
-            # 2. Outstanding Balance (Using approved only)
-            row['outstanding_balance'] = closing - payments - discounts_approved - adjustments_approved
-            
-            # 3. Payment Plan Status (Using approved only)
+            # Outstanding Balance
+            row['outstanding_balance'] = closing - payments - discounts - adjustments
             is_pp = (payments >= 0.3 * closing) and (row['outstanding_balance'] > 0)
-            if not is_pp:
-                row['pp_status'] = "No Plan"
-            else:
-                last_pay = row['last_payment_date']
-                if not last_pay:
-                    row['pp_status'] = "Defaulted"
-                else:
-                    try:
-                        last_pay_dt = pd.to_datetime(last_pay)
-                        diff = (today - last_pay_dt.normalize()).days
-                        row['pp_status'] = "Active" if diff <= 30 else "Defaulted"
-                    except:
-                        row['pp_status'] = "Defaulted"
+            row['pp_status'] = "Yes" if is_pp else "No"
             
             processed_data.append(row)
             
@@ -777,38 +765,36 @@ def api_customers_export():
         return jsonify({"error": "Missing filters"}), 400
 
     try:
-        # Use the same complex logic as preview for full parity
         sql = text("""
             SELECT 
-                c.account_number, 
-                c.account_name, 
-                c.account_address, 
-                c.business_unit, 
-                c.account_officer, 
-                c.closing_balance,
+                c.account_number as 'Account Number', 
+                c.account_name as 'Account Name', 
+                c.account_address as 'Account Address', 
+                c.business_unit as 'Business Unit', 
+                c.undertaking as 'Undertaking',
+                c.account_officer as 'Account Officer', 
+                c.feeder as 'Feeder Name',
+                c.dt_name as 'DT Name',
+                v.phone_number as 'Phone Number',
+                c.closing_balance as 'Closing Balance',
                 COALESCE(p.total_payments, 0) as total_payments,
-                COALESCE(o.total_other, 0) as total_other,
-                COALESCE(d.total_discounts_display, 0) as total_discounts_display,
                 COALESCE(d.total_discounts_approved, 0) as total_discounts_approved,
-                COALESCE(a.total_adjustments_display, 0) as total_adjustments_display,
                 COALESCE(a.total_adjustments_approved, 0) as total_adjustments_approved,
-                coll.last_payment_date
+                lp.last_payment_date as 'Last Payment Date'
             FROM customers c
             LEFT JOIN (SELECT account_number, SUM(amount_paid) as total_payments FROM all_payments GROUP BY account_number) p ON c.account_number = p.account_number
-            LEFT JOIN (SELECT account_number, MAX(NULLIF(date_of_payment, '0000-00-00')) as last_payment_date FROM collections GROUP BY account_number) coll ON c.account_number = coll.account_number
-            LEFT JOIN (SELECT account_number, SUM(amount_paid) as total_other FROM other_payments GROUP BY account_number) o ON c.account_number = o.account_number
+            LEFT JOIN (SELECT account_number, MAX(date_of_payment) as last_payment_date FROM collections GROUP BY account_number) lp ON c.account_number = lp.account_number
             LEFT JOIN (
                 SELECT account_number, 
-                    SUM(CASE WHEN LOWER(status) != 'rejected' THEN discounted_amount ELSE 0 END) as total_discounts_display,
                     SUM(CASE WHEN LOWER(status) = 'approved' OR LOWER(user_who_approved) LIKE '%okoye%' OR LOWER(user_who_approved) LIKE '%forstinus%' THEN discounted_amount ELSE 0 END) as total_discounts_approved
                 FROM discounts GROUP BY account_number
             ) d ON c.account_number = d.account_number
             LEFT JOIN (
                 SELECT account_number, 
-                    SUM(CASE WHEN LOWER(status) != 'rejected' THEN adjustment_amount ELSE 0 END) as total_adjustments_display,
                     SUM(CASE WHEN LOWER(status) = 'approved' OR LOWER(user_who_approved_adjustment) LIKE '%okoye%' OR LOWER(user_who_approved_adjustment) LIKE '%forstinus%' THEN adjustment_amount ELSE 0 END) as total_adjustments_approved
                 FROM adjustments GROUP BY account_number
             ) a ON c.account_number = a.account_number
+            LEFT JOIN (SELECT account_number, phone_number FROM validation WHERE id IN (SELECT MAX(id) FROM validation GROUP BY account_number)) v ON c.account_number = v.account_number
             WHERE c.business_unit IN :bus
             AND c.officer_type IN :otypes
             AND c.account_officer IN :onames
@@ -825,37 +811,24 @@ def api_customers_export():
         if df.empty:
             return jsonify({"error": "No data found"}), 404
 
-        # Calculate additional fields for export
-        today = pd.Timestamp.now().normalize()
+        df['Total Payments'] = df['total_payments']
+        df['Valid Discount Amount'] = df['total_discounts_approved']
+        df['Valid Adjustment Amount'] = df['total_adjustments_approved']
+        df['Outstanding Balance'] = df['Closing Balance'] - df['total_payments'] - df['total_discounts_approved'] - df['total_adjustments_approved']
         
-        df['Total Payments'] = df['total_payments'] + df['total_other']
-        df['Outstanding Balance'] = df['closing_balance'] - df['total_payments'] - df['total_discounts_approved'] - df['total_adjustments_approved']
-        
-        def get_status(row):
-            is_pp = (row['total_payments'] >= 0.3 * row['closing_balance']) and (row['Outstanding Balance'] > 0)
-            if not is_pp: return "No Plan"
-            if not row['last_payment_date']: return "Defaulted"
-            try:
-                diff = (today - pd.to_datetime(row['last_payment_date']).normalize()).days
-                return "Active" if diff <= 30 else "Defaulted"
-            except: return "Defaulted"
+        def get_pp_status(row):
+            is_pp = (row['total_payments'] >= 0.3 * row['Closing Balance']) and (row['Outstanding Balance'] > 0)
+            return "Yes" if is_pp else "No"
 
-        df['Payment Plan Status'] = df.apply(get_status, axis=1)
+        df['Current Payment-Plan Status'] = df.apply(get_pp_status, axis=1)
         
-        # Select and rename for professional output
         export_df = df[[
-            'account_number', 'account_name', 'business_unit', 'account_officer', 
-            'Total Payments', 'Outstanding Balance', 'Payment Plan Status', 'last_payment_date',
-            'total_discounts_display', 'total_adjustments_display'
-        ]].rename(columns={
-            'account_number': 'Account #',
-            'account_name': 'Customer Name',
-            'business_unit': 'BU',
-            'account_officer': 'Officer',
-            'last_payment_date': 'Last Payment Date',
-            'total_discounts_display': 'Discount',
-            'total_adjustments_display': 'Adjustment'
-        })
+            'Account Number', 'Account Name', 'Account Address', 'Business Unit', 
+            'Undertaking', 'Account Officer', 'Feeder Name', 'DT Name', 'Phone Number',
+            'Closing Balance', 'Total Payments', 'Valid Discount Amount', 
+            'Valid Adjustment Amount', 'Outstanding Balance', 'Last Payment Date', 
+            'Current Payment-Plan Status'
+        ]]
             
         filename = f"Customer_Listing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         export_dir = os.path.abspath(app.config['UPLOAD_FOLDER'])

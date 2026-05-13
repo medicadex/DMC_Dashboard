@@ -5,10 +5,15 @@ import os
 from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, session, make_response, Response
 from werkzeug.utils import secure_filename
 from db_utils import get_db_engine
-from datetime import datetime
+from datetime import datetime, timedelta
+import logging
 from sqlalchemy import text
 import pandas as pd
 from functools import wraps
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from services.account_service import AccountService
 from services.validation_service import ValidationService
@@ -26,6 +31,55 @@ app = Flask(__name__)
 app.secret_key = os.urandom(24)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+def generate_descriptive_filename(base_name, filters):
+    """
+    Generates a descriptive filename based on applied filters.
+    """
+    parts = [base_name]
+    
+    # Handle Officer Type
+    otype = filters.get('otype') or filters.get('otypes')
+    if otype:
+        if isinstance(otype, list):
+            if len(otype) == 1: parts.append(otype[0])
+            elif len(otype) > 1: parts.append("MixedTypes")
+        elif otype != 'Both':
+            parts.append(otype)
+            
+    # Handle Period/Date Range
+    if filters.get('period'):
+        parts.append(filters['period'].capitalize())
+    
+    if filters.get('start') and filters.get('end'):
+        parts.append(f"{filters['start']}_to_{filters['end']}")
+    elif filters.get('year'):
+        parts.append(filters['year'])
+        if filters.get('quarter') and filters['quarter'] != 'Full':
+            parts.append(filters['quarter'])
+            
+    # Handle Business Unit
+    bus = filters.get('bu') or filters.get('bus')
+    if bus:
+        if isinstance(bus, list):
+            if len(bus) == 1: parts.append(bus[0])
+            elif len(bus) > 1: parts.append(f"{len(bus)}BUs")
+        else:
+            parts.append(bus)
+
+    # Handle Form Type (Job Form specific)
+    if filters.get('ftype'):
+        parts.append(filters['ftype'])
+
+    parts.append(datetime.now().strftime('%Y%m%d_%H%M%S'))
+    
+    # Sanitize and join
+    filename = "_".join([str(p) for p in parts if p])
+    # Remove chars that might cause issues in URLs or Filesystems
+    for char in [' ', ',', '/', '\\', ':', '*', '?', '"', '<', '>', '|']:
+        filename = filename.replace(char, "_")
+    
+    return f"{filename}.xlsx"
 
 # ────────────────────────────────────────────────
 # CONFIG
@@ -414,23 +468,25 @@ def job_form_export():
         if df.empty:
             return jsonify({"error": "No data found for selected filters"}), 404
             
-        filename = f"Job_Form_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        # Ensure path is absolute and directory exists
+        filename = generate_descriptive_filename("Job_Forms", filters)
         export_dir = os.path.abspath(app.config['UPLOAD_FOLDER'])
         os.makedirs(export_dir, exist_ok=True)
         filepath = os.path.join(export_dir, filename)
         
-        print(f"Exporting Job Form to: {filepath}")
-        df.to_excel(filepath, index=False)
+        # Use xlsxwriter engine for robustness
+        with pd.ExcelWriter(filepath, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Job Form')
         
         if os.path.exists(filepath):
             return jsonify({"success": True, "filename": filename})
         else:
-            return jsonify({"error": "File was not created on server"}), 500
+            return jsonify({"error": "File creation failed"}), 500
     except Exception as e:
+        import logging
+        logging.error(f"Job Form Export Error: {str(e)}")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Export failed: {str(e)}"}), 500
 
 @app.route('/api/performance/rank')
 @login_required
@@ -558,6 +614,97 @@ def api_performance_rank():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/performance/export', methods=['POST'])
+@login_required
+def api_performance_export():
+    data = request.get_json()
+    period = data.get('period', 'daily')
+    otype = data.get('otype', 'Both')
+    start_date = data.get('start')
+    end_date = data.get('end')
+    year = data.get('year')
+    quarter = data.get('quarter', 'Full')
+    
+    try:
+        # Determine date range based on period (Reusing logic from api_performance_rank)
+        now = datetime.now()
+        if period == 'daily':
+            start, end = now.strftime('%Y-%m-%d'), now.strftime('%Y-%m-%d')
+        elif period == 'weekly':
+            start = (now - pd.Timedelta(days=now.weekday())).strftime('%Y-%m-%d')
+            end = now.strftime('%Y-%m-%d')
+        elif period == 'monthly':
+            start, end = now.strftime('%Y-%m-01'), now.strftime('%Y-%m-%d')
+        elif period == 'annual':
+            if not year: year = str(now.year)
+            if quarter == 'Full': start, end = f"{year}-01-01", f"{year}-12-31"
+            elif quarter == 'Q1': start, end = f"{year}-01-01", f"{year}-03-31"
+            elif quarter == 'Q2': start, end = f"{year}-04-01", f"{year}-06-30"
+            elif quarter == 'Q3': start, end = f"{year}-07-01", f"{year}-09-30"
+            elif quarter == 'Q4': start, end = f"{year}-10-01", f"{year}-12-31"
+        elif period == 'custom':
+            start, end = start_date, end_date
+        else:
+            return jsonify({"error": "Invalid period"}), 400
+
+        # Query
+        otype_clause = "AND c.officer_type = :otype" if otype != 'Both' else ""
+        sql = text(f"""
+            SELECT 
+                c.account_officer as 'Officer Name', 
+                c.business_unit as 'Business Unit', 
+                c.officer_type as 'Officer Type',
+                SUM(p.amount_paid) as 'Total Recovery'
+            FROM all_payments p
+            JOIN customers c ON p.account_number = c.account_number
+            WHERE p.date_of_payment BETWEEN :start AND :end
+            {otype_clause}
+            GROUP BY c.account_officer, c.business_unit, c.officer_type
+            ORDER BY 'Total Recovery' DESC
+        """)
+        
+        params = {"start": start, "end": end}
+        if otype != 'Both': params["otype"] = otype
+
+        with engine.connect() as conn:
+            df = pd.read_sql(sql, conn, params=params)
+            
+        if df.empty:
+            return jsonify({"error": "No data found to export"}), 404
+
+        # Grouping logic for final export (Summing up multi-BU recovery)
+        final_df = df.groupby(['Officer Name', 'Officer Type']).agg({
+            'Total Recovery': 'sum',
+            'Business Unit': lambda x: ", ".join(x.unique())
+        }).reset_index()
+        
+        final_df = final_df.sort_values('Total Recovery', ascending=False)
+        final_df['Rank'] = range(1, len(final_df) + 1)
+        
+        # Reorder columns
+        final_df = final_df[['Rank', 'Officer Name', 'Business Unit', 'Officer Type', 'Total Recovery']]
+        
+        filename = generate_descriptive_filename("Performance_Ranking", {
+            "otype": otype,
+            "period": period,
+            "start": start,
+            "end": end,
+            "year": year,
+            "quarter": quarter
+        })
+        export_dir = os.path.abspath(app.config['UPLOAD_FOLDER'])
+        os.makedirs(export_dir, exist_ok=True)
+        filepath = os.path.join(export_dir, filename)
+        
+        with pd.ExcelWriter(filepath, engine='xlsxwriter') as writer:
+            final_df.to_excel(writer, index=False, sheet_name='Officer Ranking')
+            
+        return jsonify({"success": True, "filename": filename})
+    except Exception as e:
+        import logging
+        logging.error(f"Performance Export Error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/payments/preview')
 @login_required
 def api_payments_preview():
@@ -656,25 +803,40 @@ def api_payments_export():
         """)
         
         with engine.connect() as conn:
+            # Explicitly cast to list for SQLAlchemy IN clause safety
             df = pd.read_sql(sql, conn, params={
-                "bus": tuple(bus),
-                "otypes": tuple(otypes),
-                "onames": tuple(onames),
+                "bus": list(bus),
+                "otypes": list(otypes),
+                "onames": list(onames),
                 "start": start_date,
                 "end": end_date
             })
             
         if df.empty:
-            return jsonify({"error": "No data found"}), 404
+            return jsonify({"error": "No data found for selected criteria"}), 404
             
-        filename = f"Payment_Listing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        filename = generate_descriptive_filename("Payment_Listing", {
+            "bu": bus,
+            "otypes": otypes,
+            "start": start_date,
+            "end": end_date
+        })
         export_dir = os.path.abspath(app.config['UPLOAD_FOLDER'])
+        os.makedirs(export_dir, exist_ok=True)
         filepath = os.path.join(export_dir, filename)
         
-        df.to_excel(filepath, index=False)
-        return jsonify({"success": True, "filename": filename})
+        # Use xlsxwriter engine for robustness
+        with pd.ExcelWriter(filepath, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Payments')
+            
+        if os.path.exists(filepath):
+            return jsonify({"success": True, "filename": filename})
+        else:
+            return jsonify({"error": "Failed to generate Excel file"}), 500
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import logging
+        logging.error(f"Payment Export Error: {str(e)}")
+        return jsonify({"error": f"Export failed: {str(e)}"}), 500
 
 @app.route('/api/customers/preview')
 @login_required
@@ -803,21 +965,24 @@ def api_customers_export():
         
         with engine.connect() as conn:
             df = pd.read_sql(sql, conn, params={
-                "bus": tuple(bus),
-                "otypes": tuple(otypes),
-                "onames": tuple(onames)
+                "bus": list(bus),
+                "otypes": list(otypes),
+                "onames": list(onames)
             })
             
         if df.empty:
-            return jsonify({"error": "No data found"}), 404
+            return jsonify({"error": "No data found for selected criteria"}), 404
 
-        df['Total Payments'] = df['total_payments']
-        df['Valid Discount Amount'] = df['total_discounts_approved']
-        df['Valid Adjustment Amount'] = df['total_adjustments_approved']
-        df['Outstanding Balance'] = df['Closing Balance'] - df['total_payments'] - df['total_discounts_approved'] - df['total_adjustments_approved']
+        # Calculate derived fields in Pandas
+        df['Total Payments'] = df['total_payments'].astype(float)
+        df['Valid Discount Amount'] = df['total_discounts_approved'].astype(float)
+        df['Valid Adjustment Amount'] = df['total_adjustments_approved'].astype(float)
+        df['Closing Balance'] = df['Closing Balance'].astype(float)
+        
+        df['Outstanding Balance'] = df['Closing Balance'] - df['Total Payments'] - df['Valid Discount Amount'] - df['Valid Adjustment Amount']
         
         def get_pp_status(row):
-            is_pp = (row['total_payments'] >= 0.3 * row['Closing Balance']) and (row['Outstanding Balance'] > 0)
+            is_pp = (row['Total Payments'] >= 0.3 * row['Closing Balance']) and (row['Outstanding Balance'] > 0)
             return "Yes" if is_pp else "No"
 
         df['Current Payment-Plan Status'] = df.apply(get_pp_status, axis=1)
@@ -830,16 +995,28 @@ def api_customers_export():
             'Current Payment-Plan Status'
         ]]
             
-        filename = f"Customer_Listing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        filename = generate_descriptive_filename("Customer_Listing", {
+            "bu": bus,
+            "otypes": otypes
+        })
         export_dir = os.path.abspath(app.config['UPLOAD_FOLDER'])
+        os.makedirs(export_dir, exist_ok=True)
         filepath = os.path.join(export_dir, filename)
         
-        export_df.to_excel(filepath, index=False)
-        return jsonify({"success": True, "filename": filename})
+        # Use xlsxwriter engine for robustness
+        with pd.ExcelWriter(filepath, engine='xlsxwriter') as writer:
+            export_df.to_excel(writer, index=False, sheet_name='Customers')
+            
+        if os.path.exists(filepath):
+            return jsonify({"success": True, "filename": filename})
+        else:
+            return jsonify({"error": "Failed to create export file"}), 500
     except Exception as e:
+        import logging
+        logging.error(f"Customer Export Error: {str(e)}")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Export failed: {str(e)}"}), 500
 
 @app.route('/download/<filename>')
 @login_required

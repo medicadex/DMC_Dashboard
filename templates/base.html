@@ -49,6 +49,11 @@
             box-sizing: border-box;
         }
 
+        html {
+            /* Responsive base font size: scales between 14px and 18px based on viewport width */
+            font-size: clamp(14px, 0.4vw + 12px, 18px);
+        }
+
         body {
             margin: 0;
             font-family: 'Inter', sans-serif;
@@ -58,6 +63,7 @@
             height: 100vh;
             overflow: hidden;
             transition: background-color 0.3s ease;
+            font-size: 1rem; /* Inherit fluid base */
         }
 
         /* Main Content Area */

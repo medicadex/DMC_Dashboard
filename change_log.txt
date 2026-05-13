@@ -1,13 +1,41 @@
-# DMC Web-App Project - Change Log
-Created: 2026-04-06
+Date: 2026-05-13
+Developer: Antigravity
+Summary: Critical Export Restoration & Performance Ranking Remediation
 
-## Project Features (DMC Web Suite)
-- Pure web-based frontend utilizing HTML/CSS/JS (Vanilla).
-- Flask Backend REST API serving data asynchronously.
-- PyWebView wrapper for native desktop executable generation.
-- Full compatibility with existing SQLite offline-first sync architecture.
-- Dual-mode server operation: Can be run as a desktop app or hosted centrally.
+Architecture:
+- Implemented robust Excel export pipeline using `xlsxwriter` engine.
+- Standardized parameter passing to SQLAlchemy `text()` using lists for `IN` clauses to ensure driver-level compatibility.
+- Added explicit directory verification (`os.makedirs`) in all export routes.
 
-## Change Log
-[2026-04-06] Initialized Change Log for isolated Web-App project.
-[2026-04-06] Isolated environment: Copied original Python backend (services, repositories, utilities) into DMC_Web_Project to prevent interference with the Tkinter desktop version.
+UI/UX:
+- Enhanced export feedback with detailed logging and error reporting.
+- Improved data integrity in exports by ensuring explicit type casting (float) for financial calculations.
+
+Performance:
+- Conducted database audit on `all_payments` view and underlying tables.
+- Identified and optimized critical join paths in `Customer Listing` and `Payment Listing` endpoints.
+- Implemented robust error handling to prevent silent failures during long-running data operations.
+
+--------------------------------------------------
+Date: 2026-05-13
+Developer: Antigravity
+Summary: Responsive Typography & Fluid Design Implementation
+
+UI/UX:
+- Implemented Fluid Typography using CSS `clamp()` function on the global `html` element.
+- Standardized homepage font scaling to adjust automatically based on viewport width (14px - 18px range).
+- Converted static pixel-based font sizes to relative `rem` units for consistent scaling.
+- Applied responsive header styling with dynamic font sizing for all dashboard cards.
+- Fixed "Export to Excel" on Performance Rank Full Report by implementing a dedicated API endpoint and frontend logic.
+
+--------------------------------------------------
+Date: 2026-05-13
+Developer: Antigravity
+Summary: Descriptive Export Naming Convention
+
+Architecture:
+- Implemented `generate_descriptive_filename` helper to create context-aware Excel filenames.
+- Updated all export endpoints (Job Forms, Payments, Customers, Performance) to include filters and date ranges in filenames.
+- Standardized filename sanitization to ensure compatibility across all operating systems.
+
+--------------------------------------------------

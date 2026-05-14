@@ -39,3 +39,70 @@ Architecture:
 - Standardized filename sanitization to ensure compatibility across all operating systems.
 
 --------------------------------------------------
+Date: 2026-05-14
+Developer: Antigravity
+Summary: Admin Table Manager & Synchronized Deduplication Logic
+
+Architecture:
+- COMPLETE REWRITE of `services/upload_service.py` for web-native RDS-only architecture.
+- Root cause fixed: `temp_` outbox tables (a desktop-only offline-first concept) do not exist on RDS.
+  The web app has no local SQLite — all writes go directly to RDS. Removed all `temp_` routing.
+- New pipeline: Excel → `_load_and_map_dataframe()` → `_push_to_rds()` → live RDS table.
+  Deduplication occurs entirely on RDS via the staging table and unique `transaction_id` key:
+    * `REPLACE INTO`  (UPSERT) for master/reference tables: `customers`, `staff`,
+      `performance_config`, `discounts`, `adjustments`, `resolutions`.
+    * `INSERT IGNORE` for immutable transactional records: `collections`, `other_payments`,
+      `validation`, `disconnections`. Duplicate rows silently skipped, count reported back.
+- Refactored into shared helper methods `_load_and_map_dataframe()` and `_push_to_rds()`.
+- Removed `direct_upload` parameter (now redundant — all uploads are always direct to RDS).
+- Admin route response now includes `duplicates` count for full transparency.
+
+UI/UX:
+- COMPLETE REDESIGN of `admin_upload.html` to mirror the desktop app's UploaderUI layout.
+- Implemented a checkbox grid — one row per table with Select All / Deselect All controls.
+- Each row reveals a drag-and-drop file picker only when its checkbox is checked.
+- Tables display INSERT IGNORE / REPLACE INTO strategy badges for transparency.
+- Real-time dark-terminal activity log shows per-table results (rows, added, duplicates).
+- Multi-table batch upload: admin can select and submit multiple tables in a single request.
+- Route updated to accept one file per table (`file_collections`, `file_validation`, etc.)
+  and return a structured JSON response with per-table success/error entries.
+- Allowed tables locked to: collections, validation, disconnections, adjustments, discounts, customers.
+- Uploaded files are auto-deleted from the server after processing.
+
+Database:
+- Optimized data ingestion using staging tables and chunked processing (5,000 rows/packet).
+- Enhanced `UploadService` to support flexible table targeting.
+
+--------------------------------------------------
+Date: 2026-05-14
+Developer: Antigravity
+Summary: Time-Accurate Officer Attribution via customer_officer_history
+
+Database:
+- Updated `reporting_service.py` — performance, summary, and export modes now join
+  `customer_officer_history` so every payment is attributed to the officer who held
+  the account at the time the payment was made, not the current officer.
+- Pattern applied consistently across three modes:
+    * `get_performance_metrics`   — all 3 CTEs (current, peak, prev_month recovery)
+    * `get_report_data` (summary) — dashboard summary listing
+    * `export_full_report` (summary) — Excel/CSV export of summary data
+- Effective column expressions used throughout:
+    * COALESCE(h.account_officer, c.account_officer) — falls back to current if no history row
+    * COALESCE(h.business_unit,   c.business_unit)
+    * COALESCE(h.officer_type,    c.officer_type)
+- JOIN condition: payment date must fall within h.start_date .. COALESCE(h.end_date, '9999-12-31')
+- `listing` mode was already history-aware (unchanged).
+- `collection` mode uses current officer (intentional — it is a snapshot, not time-series).
+
+Architecture:
+- `get_performance_metrics` filter_clause now filters by COALESCE officer/bu/type so
+  that officer-type and BU filters match the history-resolved attribution, not just the
+  current customers table value.
+- Summary mode filters (`c.officer_type`, `c.business_unit`) remain on the customers
+  table — this filters which accounts are included; attribution of payments within those
+  accounts is then resolved via history.
+
+UI/UX:
+- Fixed currency symbol (₦) wrapping and alignment on the `home.html` dashboard tables
+  by using inline spans (`<span class="cur">₦</span>`) and setting `white-space: nowrap` 
+  on amount columns to prevent vertical stacking in narrow views.

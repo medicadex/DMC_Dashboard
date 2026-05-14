@@ -222,6 +222,63 @@ def report_uploader():
                 return jsonify({"error": str(e)}), 500
                 
     return render_template('upload.html', active_page='upload')
+    
+@app.route('/admin/upload-tables', methods=['GET', 'POST'])
+@login_required
+def admin_upload_tables():
+    """Admin-only route for bulk uploading data to multiple RDS tables simultaneously."""
+    if session['user'].get('role') != 'Admin':
+        return redirect(url_for('index'))
+
+    # Hardcoded set of allowed tables — only these can be uploaded via the admin panel
+    ALLOWED_TABLES = ['collections', 'validation', 'disconnections', 'adjustments', 'discounts', 'customers']
+
+    if request.method == 'POST':
+        results = []
+        errors  = []
+
+        for table_name in ALLOWED_TABLES:
+            file_key = f"file_{table_name}"
+            file = request.files.get(file_key)
+
+            # Skip tables where no file was attached
+            if not file or file.filename == '':
+                continue
+
+            filename = secure_filename(file.filename)
+            if not filename.lower().endswith(('.xlsx', '.xls')):
+                errors.append({"table": table_name, "error": "Invalid file type. Only .xlsx/.xls allowed."})
+                continue
+
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
+
+            try:
+                result = upload_service.process_table(
+                    table_name, filepath, session['user']['username']
+                )
+                results.append({
+                    "table":      table_name,
+                    "total":      result.get('total', 0),
+                    "new":        result.get('new', 0),
+                    "duplicates": result.get('duplicates', 0),
+                    "status":     "success"
+                })
+            except Exception as e:
+                logger.error(f"Admin upload failed for '{table_name}': {e}")
+                errors.append({"table": table_name, "error": str(e)})
+            finally:
+                # Clean up the uploaded file after processing
+                try:
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
+                except Exception:
+                    pass
+
+        return jsonify({"results": results, "errors": errors})
+
+    return render_template('admin_upload.html', active_page='admin_upload')
+
 
 @app.route('/favicon.ico')
 def favicon():

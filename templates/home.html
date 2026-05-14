@@ -42,6 +42,14 @@
         font-family: 'JetBrains Mono', monospace;
         font-weight: 700;
         color: var(--primary-color);
+        white-space: nowrap;        /* ← keeps ₦ and digits on one line */
+        font-size: 0.82rem;         /* ← slightly smaller to fit narrow columns */
+    }
+    .cur {
+        font-size: 0.72rem;         /* ₦ symbol smaller than the number */
+        vertical-align: baseline;
+        margin-right: 1px;
+        opacity: 0.85;
     }
     
     /* Fluid headers for cards */
@@ -156,7 +164,7 @@ async function loadDashboardStats() {
                     return `
                         <tr>
                             <td class="bu-column">${r.bu}</td>
-                            <td class="amount-column">₦ ${Number(r.total).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+                            <td class="amount-column"><span class="cur">₦</span>${Number(r.total).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
                         </tr>
                     `;
                 }).join('');
@@ -164,7 +172,7 @@ async function loadDashboardStats() {
                 tfoot.innerHTML = `
                     <tr style="background: rgba(243, 44, 145, 0.05);">
                         <td class="bu-column" style="text-transform: uppercase; font-size: 0.7rem; color: var(--primary-color);">TOTAL RECOVERY</td>
-                        <td class="amount-column">₦ ${Number(total).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+                        <td class="amount-column"><span class="cur">₦</span>${Number(total).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
                     </tr>
                 `;
             };
@@ -200,7 +208,7 @@ async function loadDashboardStats() {
                         const val = buStat ? buStat.total : 0;
                         rowTotal += val;
                         weekTotals[w.week_label] += val;
-                        return `<td class="amount-column" style="color: ${val > 0 ? 'var(--primary-color)' : 'var(--text-muted)'}; font-weight: ${val > 0 ? '700' : '400'}; opacity: ${val > 0 ? '1' : '0.4'};">${val > 0 ? '₦' + Number(val).toLocaleString(undefined, {maximumFractionDigits:0}) : '-'}</td>`;
+                        return `<td class="amount-column" style="color: ${val > 0 ? 'var(--primary-color)' : 'var(--text-muted)'}; font-weight: ${val > 0 ? '700' : '400'}; opacity: ${val > 0 ? '1' : '0.4'}; white-space:nowrap;">${val > 0 ? '<span class="cur">₦</span>' + Number(val).toLocaleString(undefined, {maximumFractionDigits:0}) : '-'}</td>`;
                     }).join('');
                     
                     grandTotal += rowTotal;
@@ -208,7 +216,7 @@ async function loadDashboardStats() {
                         <tr>
                             <td class="bu-column">${bu}</td>
                             ${weekCells}
-                            <td class="amount-column">₦ ${Number(rowTotal).toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                            <td class="amount-column"><span class="cur">₦</span>${Number(rowTotal).toLocaleString(undefined, {maximumFractionDigits:0})}</td>
                         </tr>
                     `;
                 }).join('');
@@ -216,8 +224,8 @@ async function loadDashboardStats() {
                 tfoot.innerHTML = `
                     <tr style="background: rgba(243, 44, 145, 0.05);">
                         <td class="bu-column" style="text-transform: uppercase; font-size: 0.7rem; color: var(--primary-color);">TOTAL</td>
-                        ${weeks.map(w => `<td class="amount-column">${Number(weekTotals[w]).toLocaleString(undefined, {maximumFractionDigits:0})}</td>`).join('')}
-                        <td class="amount-column">₦ ${Number(grandTotal).toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                        ${weeks.map(w => `<td class="amount-column"><span class="cur">₦</span>${Number(weekTotals[w]).toLocaleString(undefined, {maximumFractionDigits:0})}</td>`).join('')}
+                        <td class="amount-column"><span class="cur">₦</span>${Number(grandTotal).toLocaleString(undefined, {maximumFractionDigits:0})}</td>
                     </tr>
                 `;
             };
@@ -233,7 +241,7 @@ async function loadDashboardStats() {
                     <tr style="border-bottom: 1px solid var(--border-color);">
                         <td style="padding: 0.5rem 0.3rem; font-weight: 500;">${r.dmo}</td>
                         <td style="padding: 0.5rem 0.3rem; color: var(--text-muted); font-size: 0.7rem;">${r.bu}</td>
-                        <td style="padding: 0.5rem 0.3rem; text-align: right; color: var(--primary-color); font-weight: 700;">₦ ${Number(r.total).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+                        <td style="padding: 0.5rem 0.3rem; text-align: right; color: var(--primary-color); font-weight: 700; white-space: nowrap;"><span class="cur">₦</span>${Number(r.total).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
                     </tr>
                 `).join('');
             };

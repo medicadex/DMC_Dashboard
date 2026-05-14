@@ -40,6 +40,16 @@ class ReportingService:
             prev_month_end_day = last_month_end
 
         # 3. Dynamic Filter Construction
+        # Effective column expressions — use officer history for time-accurate payment attribution
+        eff_officer = "COALESCE(h.account_officer, c.account_officer)"
+        eff_bu      = "COALESCE(h.business_unit,   c.business_unit)"
+        eff_type    = "COALESCE(h.officer_type,    c.officer_type)"
+        history_join = (
+            "LEFT JOIN customer_officer_history h "
+            "ON p.account_number = h.account_number "
+            "AND p.date_of_payment BETWEEN h.start_date AND COALESCE(h.end_date, '9999-12-31')"
+        )
+
         filter_clause = ""
         params = {
             "mtd_start": month_start.strftime('%Y-%m-%d 00:00:00'),
@@ -49,17 +59,17 @@ class ReportingService:
         }
 
         if off_type != "All":
-            filter_clause += " AND c.officer_type = :off_type"
+            filter_clause += f" AND {eff_type} = :off_type"
             params["off_type"] = off_type
-            
+
         if bu_filter and "All" not in bu_filter:
             in_markers = [f":bu_{i}" for i in range(len(bu_filter))]
             for i, bu in enumerate(bu_filter): params[f"bu_{i}"] = bu
-            filter_clause += f" AND c.business_unit IN ({', '.join(in_markers)})"
-            
+            filter_clause += f" AND {eff_bu} IN ({', '.join(in_markers)})"
+
         # Apply Global Search (Backend)
         if search_query:
-            filter_clause += " AND (c.account_officer LIKE :sq OR c.business_unit LIKE :sq)"
+            filter_clause += f" AND ({eff_officer} LIKE :sq OR {eff_bu} LIKE :sq)"
             params["sq"] = f"%{search_query}%"
 
         with self.engine.connect() as conn:
@@ -78,7 +88,7 @@ class ReportingService:
             """
             peak_month_res = conn.execute(text(peak_sql)).fetchone()
             peak_month_start = datetime.strptime(peak_month_res[0], '%Y-%m-%d') if peak_month_res else month_start
-            
+
             try:
                 peak_period_end = peak_month_start.replace(day=end_dt.day)
             except ValueError:
@@ -86,53 +96,55 @@ class ReportingService:
                 peak_period_end = peak_offset.date() if hasattr(peak_offset, 'date') else peak_offset
 
             params["peak_start"] = peak_month_start.strftime('%Y-%m-%d 00:00:00')
-            params["peak_end"] = peak_period_end.strftime('%Y-%m-%d 23:59:59')
+            params["peak_end"]   = peak_period_end.strftime('%Y-%m-%d 23:59:59')
 
-            # 6. Main Performance Query
-            # Dynamic grouping: If Vendor, aggregate across BUs
-            group_cols = "c.account_officer" if off_type == "Vendor" else "c.business_unit, c.account_officer"
-            bu_col = "GROUP_CONCAT(DISTINCT c.business_unit SEPARATOR ', ') as business_unit" if off_type == "Vendor" else "c.business_unit"
-            join_on = "curr.account_officer = peak.account_officer" if off_type == "Vendor" else "curr.business_unit = peak.business_unit AND curr.account_officer = peak.account_officer"
+            # 6. Main Performance Query — grouped by history-resolved officer/BU
+            group_cols   = f"{eff_officer}" if off_type == "Vendor" else f"{eff_bu}, {eff_officer}"
+            bu_col       = f"GROUP_CONCAT(DISTINCT {eff_bu} SEPARATOR ', ') as business_unit" if off_type == "Vendor" else f"{eff_bu} as business_unit"
+            join_on      = "curr.account_officer = peak.account_officer" if off_type == "Vendor" else "curr.business_unit = peak.business_unit AND curr.account_officer = peak.account_officer"
             join_on_prev = "curr.account_officer = prev.account_officer" if off_type == "Vendor" else "curr.business_unit = prev.business_unit AND curr.account_officer = prev.account_officer"
 
             sql = f"""
                 WITH current_recovery AS (
-                    SELECT 
-                        {bu_col}, 
-                        c.account_officer,
+                    SELECT
+                        {bu_col},
+                        {eff_officer} as account_officer,
                         SUM(p.amount_paid) as actual_mtd,
                         COUNT(DISTINCT p.account_number) as response_count,
                         COUNT(DISTINCT CASE WHEN afs.outstanding_balance <= 0 THEN p.account_number END) as payoff_count
                     FROM all_payments p
                     JOIN customers c ON p.account_number = c.account_number
+                    {history_join}
                     LEFT JOIN account_financial_summary afs ON p.account_number = afs.account_number
                     WHERE DATE(p.date_of_payment) BETWEEN DATE(:mtd_start) AND DATE(:mtd_end)
                     {filter_clause}
                     GROUP BY {group_cols}
                 ),
                 peak_recovery AS (
-                    SELECT 
+                    SELECT
                         {bu_col},
-                        c.account_officer,
+                        {eff_officer} as account_officer,
                         SUM(p.amount_paid) as peak_mtd
                     FROM all_payments p
                     JOIN customers c ON p.account_number = c.account_number
+                    {history_join}
                     WHERE DATE(p.date_of_payment) BETWEEN DATE(:peak_start) AND DATE(:peak_end)
                     {filter_clause}
                     GROUP BY {group_cols}
                 ),
                 prev_month_recovery AS (
-                    SELECT 
+                    SELECT
                         {bu_col},
-                        c.account_officer,
+                        {eff_officer} as account_officer,
                         SUM(p.amount_paid) as prev_mtd
                     FROM all_payments p
                     JOIN customers c ON p.account_number = c.account_number
+                    {history_join}
                     WHERE DATE(p.date_of_payment) BETWEEN DATE(:prev_start) AND DATE(:prev_end)
                     {filter_clause}
                     GROUP BY {group_cols}
                 )
-                SELECT 
+                SELECT
                     curr.business_unit as BU,
                     curr.account_officer as `Account Officer`,
                     curr.actual_mtd as Actual,
@@ -329,20 +341,25 @@ class ReportingService:
                 "month_start": end_dt.strftime('%Y-%m-01')
             })
 
-            group_cols = "c.account_officer" if off_type == "Vendor" else "c.business_unit, c.account_officer"
-            bu_col = "GROUP_CONCAT(DISTINCT c.business_unit SEPARATOR ', ') as `Business Unit`" if off_type == "Vendor" else "c.business_unit as `Business Unit`"
+            s_eff_officer = "COALESCE(hs.account_officer, c.account_officer)"
+            s_eff_bu      = "COALESCE(hs.business_unit,   c.business_unit)"
+            group_cols = f"{s_eff_officer}" if off_type == "Vendor" else f"{s_eff_bu}, {s_eff_officer}"
+            bu_col = f"GROUP_CONCAT(DISTINCT {s_eff_bu} SEPARATOR ', ') as `Business Unit`" if off_type == "Vendor" else f"{s_eff_bu} as `Business Unit`"
 
             sql = f"""
-                SELECT 
+                SELECT
                     ROW_NUMBER() OVER (ORDER BY SUM(CASE WHEN DATE(main.date_of_payment) >= :month_start THEN main.amount_paid ELSE 0 END) DESC) as `S/N`,
                     {bu_col},
-                    c.account_officer as `Account Officer`,
-                    SUM(CASE WHEN DATE(main.date_of_payment) = :today THEN main.amount_paid ELSE 0 END) as `Today's Payment`,
-                    SUM(CASE WHEN DATE(main.date_of_payment) = :yesterday THEN main.amount_paid ELSE 0 END) as `Yesterday Recovery`,
+                    {s_eff_officer} as `Account Officer`,
+                    SUM(CASE WHEN DATE(main.date_of_payment) = :today     THEN main.amount_paid ELSE 0 END) as `Today's Payment`,
+                    SUM(CASE WHEN DATE(main.date_of_payment) = :yesterday  THEN main.amount_paid ELSE 0 END) as `Yesterday Recovery`,
                     SUM(CASE WHEN DATE(main.date_of_payment) >= :week_start THEN main.amount_paid ELSE 0 END) as `This Week Recovery`,
                     SUM(CASE WHEN DATE(main.date_of_payment) >= :month_start THEN main.amount_paid ELSE 0 END) as `Total Recovery`
                 FROM all_payments main
                 LEFT JOIN customers c ON main.account_number = c.account_number
+                LEFT JOIN customer_officer_history hs
+                    ON main.account_number = hs.account_number
+                    AND main.date_of_payment BETWEEN hs.start_date AND COALESCE(hs.end_date, '9999-12-31')
                 {filters}
                 GROUP BY {group_cols}
                 ORDER BY `Total Recovery` DESC
@@ -496,22 +513,27 @@ class ReportingService:
                 "month_start": end_dt.strftime('%Y-%m-01')
             })
             
-            group_cols = "c.account_officer" if off_type == "Vendor" else "c.business_unit, c.account_officer"
-            bu_col = "GROUP_CONCAT(DISTINCT c.business_unit SEPARATOR ', ') as `Business Unit`" if off_type == "Vendor" else "c.business_unit as `Business Unit`"
+            s_eff_officer = "COALESCE(hs.account_officer, c.account_officer)"
+            s_eff_bu      = "COALESCE(hs.business_unit,   c.business_unit)"
+            group_cols = f"{s_eff_officer}" if off_type == "Vendor" else f"{s_eff_bu}, {s_eff_officer}"
+            bu_col = f"GROUP_CONCAT(DISTINCT {s_eff_bu} SEPARATOR ', ') as `Business Unit`" if off_type == "Vendor" else f"{s_eff_bu} as `Business Unit`"
 
             sql = f"""
-                SELECT 
+                SELECT
                     ROW_NUMBER() OVER (ORDER BY SUM(CASE WHEN DATE(main.date_of_payment) >= :month_start THEN main.amount_paid ELSE 0 END) DESC) as `S/N`,
-                    {bu_col}, 
-                    c.account_officer as `Account Officer`, 
-                    SUM(CASE WHEN DATE(main.date_of_payment) = :today THEN main.amount_paid ELSE 0 END) as `Today's Payment`, 
-                    SUM(CASE WHEN DATE(main.date_of_payment) = :yesterday THEN main.amount_paid ELSE 0 END) as `Yesterday Recovery`, 
-                    SUM(CASE WHEN DATE(main.date_of_payment) >= :week_start THEN main.amount_paid ELSE 0 END) as `This Week Recovery`, 
-                    SUM(CASE WHEN DATE(main.date_of_payment) >= :month_start THEN main.amount_paid ELSE 0 END) as `Total Recovery` 
-                FROM all_payments main 
-                LEFT JOIN customers c ON main.account_number = c.account_number 
-                {filters} 
-                GROUP BY {group_cols} 
+                    {bu_col},
+                    {s_eff_officer} as `Account Officer`,
+                    SUM(CASE WHEN DATE(main.date_of_payment) = :today     THEN main.amount_paid ELSE 0 END) as `Today's Payment`,
+                    SUM(CASE WHEN DATE(main.date_of_payment) = :yesterday  THEN main.amount_paid ELSE 0 END) as `Yesterday Recovery`,
+                    SUM(CASE WHEN DATE(main.date_of_payment) >= :week_start THEN main.amount_paid ELSE 0 END) as `This Week Recovery`,
+                    SUM(CASE WHEN DATE(main.date_of_payment) >= :month_start THEN main.amount_paid ELSE 0 END) as `Total Recovery`
+                FROM all_payments main
+                LEFT JOIN customers c ON main.account_number = c.account_number
+                LEFT JOIN customer_officer_history hs
+                    ON main.account_number = hs.account_number
+                    AND main.date_of_payment BETWEEN hs.start_date AND COALESCE(hs.end_date, '9999-12-31')
+                {filters}
+                GROUP BY {group_cols}
                 ORDER BY `Total Recovery` DESC
             """
 

@@ -1,0 +1,568 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin Table Manager - IE DMC{% endblock %}
+{% block page_title %}🛡️ Admin Table Manager{% endblock %}
+
+{% block head %}
+<style>
+    /* ── Layout ── */
+    .uploader-wrap { max-width: 960px; margin: 0 auto; }
+
+    /* ── Section Cards ── */
+    .section-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 22px 26px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+    }
+    .section-title {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--text-color);
+        margin: 0 0 18px 0;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .section-title i { color: var(--primary-color); }
+
+    /* ── Select All / Deselect All ── */
+    .toggle-bar {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 18px;
+    }
+    .btn-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 7px 16px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        border: 1px solid var(--border-color);
+        background: var(--bg-color);
+        color: var(--text-color);
+        transition: all 0.2s;
+    }
+    .btn-toggle:hover { border-color: var(--primary-color); color: var(--primary-color); }
+
+    /* ── Table Grid (checkbox + file picker per row) ── */
+    .table-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+    @media (max-width: 700px) { .table-grid { grid-template-columns: 1fr; } }
+
+    .table-row {
+        background: var(--bg-color);
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        padding: 14px 16px;
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .table-row.active {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(243,44,145,0.08);
+    }
+
+    .table-row-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 0;
+        cursor: pointer;
+    }
+    .table-row-header input[type="checkbox"] {
+        width: 18px; height: 18px;
+        accent-color: var(--primary-color);
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+    .table-label {
+        font-weight: 600;
+        font-size: 14px;
+        color: var(--text-color);
+        flex: 1;
+    }
+    .table-badge {
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .badge-upsert { background: rgba(16,185,129,0.15); color: var(--success-color); }
+    .badge-ignore { background: rgba(59,130,246,0.15); color: #60a5fa; }
+
+    /* File picker – only shown when checkbox is checked */
+    .file-picker-wrap {
+        display: none;
+        margin-top: 12px;
+        border-top: 1px dashed var(--border-color);
+        padding-top: 12px;
+    }
+    .table-row.active .file-picker-wrap { display: block; }
+
+    .drop-zone-mini {
+        border: 2px dashed var(--border-color);
+        border-radius: 8px;
+        padding: 14px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 13px;
+        color: var(--text-muted);
+    }
+    .drop-zone-mini.has-file {
+        border-color: var(--success-color);
+        background: rgba(16,185,129,0.05);
+        color: var(--success-color);
+    }
+    .drop-zone-mini:hover { border-color: var(--primary-color); color: var(--primary-color); }
+    .drop-zone-mini i { font-size: 18px; display: block; margin-bottom: 4px; }
+    .file-input-hidden { display: none; }
+
+    /* ── Submit Button ── */
+    .btn-start {
+        width: 100%;
+        padding: 14px;
+        background: var(--primary-color);
+        color: white;
+        font-size: 15px;
+        font-weight: 700;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        transition: all 0.2s;
+        margin-top: 6px;
+    }
+    .btn-start:hover:not(:disabled) {
+        background: var(--primary-hover);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(243,44,145,0.3);
+    }
+    .btn-start:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    /* ── Activity Log Terminal ── */
+    .log-terminal {
+        background: #0d1117;
+        border: 1px solid #30363d;
+        border-radius: 10px;
+        padding: 16px;
+        font-family: 'Consolas', 'Courier New', monospace;
+        font-size: 13px;
+        min-height: 180px;
+        max-height: 340px;
+        overflow-y: auto;
+        line-height: 1.7;
+    }
+    .log-terminal::-webkit-scrollbar { width: 6px; }
+    .log-terminal::-webkit-scrollbar-track { background: #161b22; }
+    .log-terminal::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+    .log-line { display: block; }
+    .log-info    { color: #8b949e; }
+    .log-start   { color: #58a6ff; }
+    .log-success { color: #3fb950; }
+    .log-error   { color: #f85149; }
+    .log-warn    { color: #d29922; }
+    .log-divider { color: #30363d; }
+
+    /* ── Notice card ── */
+    .notice-card {
+        border-left: 4px solid var(--warning-color);
+        background: rgba(245,158,11,0.05);
+        border-radius: 0 8px 8px 0;
+        padding: 14px 18px;
+        font-size: 13px;
+        color: var(--text-muted);
+        line-height: 1.6;
+    }
+    .notice-card b { color: var(--text-color); }
+    .admin-chip {
+        background: var(--primary-color);
+        color: white;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 4px;
+        text-transform: uppercase;
+        margin-left: 8px;
+        vertical-align: middle;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="uploader-wrap">
+
+    <!-- ── Header notice ── -->
+    <div class="notice-card" style="margin-bottom: 20px;">
+        <i class="fas fa-info-circle" style="color: var(--warning-color); margin-right: 6px;"></i>
+        <b>Deduplication is automatic.</b>
+        Master tables use <b>REPLACE INTO</b> (upsert existing records).
+        Transaction tables use <b>INSERT IGNORE</b> (skip duplicates, protect financial data).
+        All uploads go directly to RDS via a staging table.
+    </div>
+
+    <!-- ── Table Selection ── -->
+    <div class="section-card">
+        <h3 class="section-title">
+            <i class="fas fa-table"></i>
+            Select Data to Upload
+            <span class="admin-chip">Admin Only</span>
+        </h3>
+
+        <div class="toggle-bar">
+            <button class="btn-toggle" type="button" id="btnSelectAll">
+                <i class="fas fa-check-square"></i> Select All
+            </button>
+            <button class="btn-toggle" type="button" id="btnDeselectAll">
+                <i class="fas fa-square"></i> Deselect All
+            </button>
+        </div>
+
+        <div class="table-grid" id="tableGrid">
+
+            <!-- Collections -->
+            <div class="table-row" id="row-collections">
+                <label class="table-row-header">
+                    <input type="checkbox" class="table-check" data-table="collections" checked>
+                    <span class="table-label"><i class="fas fa-money-bill-wave" style="color:#60a5fa;margin-right:6px;font-size:13px;"></i>Collections</span>
+                    <span class="table-badge badge-ignore">INSERT IGNORE</span>
+                </label>
+                <div class="file-picker-wrap">
+                    <div class="drop-zone-mini" id="dz-collections" data-table="collections">
+                        <i class="fas fa-file-excel"></i>
+                        Click or drop Report_*.xlsx here
+                    </div>
+                    <input type="file" class="file-input-hidden" id="fi-collections" accept=".xlsx,.xls" name="file_collections">
+                </div>
+            </div>
+
+            <!-- Validation -->
+            <div class="table-row" id="row-validation">
+                <label class="table-row-header">
+                    <input type="checkbox" class="table-check" data-table="validation" checked>
+                    <span class="table-label"><i class="fas fa-clipboard-check" style="color:#a78bfa;margin-right:6px;font-size:13px;"></i>Validation</span>
+                    <span class="table-badge badge-ignore">INSERT IGNORE</span>
+                </label>
+                <div class="file-picker-wrap">
+                    <div class="drop-zone-mini" id="dz-validation" data-table="validation">
+                        <i class="fas fa-file-excel"></i>
+                        Click or drop CustomerValidation_*.xlsx here
+                    </div>
+                    <input type="file" class="file-input-hidden" id="fi-validation" accept=".xlsx,.xls" name="file_validation">
+                </div>
+            </div>
+
+            <!-- Disconnections -->
+            <div class="table-row" id="row-disconnections">
+                <label class="table-row-header">
+                    <input type="checkbox" class="table-check" data-table="disconnections" checked>
+                    <span class="table-label"><i class="fas fa-plug" style="color:#f87171;margin-right:6px;font-size:13px;"></i>Disconnections</span>
+                    <span class="table-badge badge-ignore">INSERT IGNORE</span>
+                </label>
+                <div class="file-picker-wrap">
+                    <div class="drop-zone-mini" id="dz-disconnections" data-table="disconnections">
+                        <i class="fas fa-file-excel"></i>
+                        Click or drop Disconnections_*.xlsx here
+                    </div>
+                    <input type="file" class="file-input-hidden" id="fi-disconnections" accept=".xlsx,.xls" name="file_disconnections">
+                </div>
+            </div>
+
+            <!-- Adjustments -->
+            <div class="table-row" id="row-adjustments">
+                <label class="table-row-header">
+                    <input type="checkbox" class="table-check" data-table="adjustments" checked>
+                    <span class="table-label"><i class="fas fa-sliders-h" style="color:#fb923c;margin-right:6px;font-size:13px;"></i>Adjustments</span>
+                    <span class="table-badge badge-upsert">REPLACE INTO</span>
+                </label>
+                <div class="file-picker-wrap">
+                    <div class="drop-zone-mini" id="dz-adjustments" data-table="adjustments">
+                        <i class="fas fa-file-excel"></i>
+                        Click or drop Adjustments_*.xlsx here
+                    </div>
+                    <input type="file" class="file-input-hidden" id="fi-adjustments" accept=".xlsx,.xls" name="file_adjustments">
+                </div>
+            </div>
+
+            <!-- Discounts -->
+            <div class="table-row" id="row-discounts">
+                <label class="table-row-header">
+                    <input type="checkbox" class="table-check" data-table="discounts" checked>
+                    <span class="table-label"><i class="fas fa-percent" style="color:#34d399;margin-right:6px;font-size:13px;"></i>Discounts</span>
+                    <span class="table-badge badge-upsert">REPLACE INTO</span>
+                </label>
+                <div class="file-picker-wrap">
+                    <div class="drop-zone-mini" id="dz-discounts" data-table="discounts">
+                        <i class="fas fa-file-excel"></i>
+                        Click or drop Discounts_*.xlsx here
+                    </div>
+                    <input type="file" class="file-input-hidden" id="fi-discounts" accept=".xlsx,.xls" name="file_discounts">
+                </div>
+            </div>
+
+            <!-- Customers -->
+            <div class="table-row" id="row-customers">
+                <label class="table-row-header">
+                    <input type="checkbox" class="table-check" data-table="customers" checked>
+                    <span class="table-label"><i class="fas fa-users" style="color:#facc15;margin-right:6px;font-size:13px;"></i>Customers</span>
+                    <span class="table-badge badge-upsert">REPLACE INTO</span>
+                </label>
+                <div class="file-picker-wrap">
+                    <div class="drop-zone-mini" id="dz-customers" data-table="customers">
+                        <i class="fas fa-file-excel"></i>
+                        Click or drop Customers_*.xlsx here
+                    </div>
+                    <input type="file" class="file-input-hidden" id="fi-customers" accept=".xlsx,.xls" name="file_customers">
+                </div>
+            </div>
+
+        </div><!-- /table-grid -->
+
+        <div style="margin-top: 20px;">
+            <button class="btn-start" id="btnStart" disabled>
+                <i class="fas fa-rocket"></i>
+                Start Processing Files
+            </button>
+        </div>
+    </div>
+
+    <!-- ── Activity Log ── -->
+    <div class="section-card">
+        <h3 class="section-title"><i class="fas fa-terminal"></i> Activity Log</h3>
+        <div class="log-terminal" id="logTerminal">
+            <span class="log-info">// Ready. Select tables and attach files, then click Start.</span>
+        </div>
+    </div>
+
+</div><!-- /uploader-wrap -->
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Table configuration ──────────────────────────────────────────────────────
+const TABLES = ['collections', 'validation', 'disconnections', 'adjustments', 'discounts', 'customers'];
+
+// ── State: which tables have files attached ──────────────────────────────────
+const fileState = {}; // table -> File object
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function log(msg, cls = 'log-info') {
+    const terminal = document.getElementById('logTerminal');
+    const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
+    const line = document.createElement('span');
+    line.className = `log-line ${cls}`;
+    line.textContent = `[${ts}]  ${msg}`;
+    terminal.appendChild(line);
+    terminal.scrollTop = terminal.scrollHeight;
+}
+
+function logDivider() {
+    const terminal = document.getElementById('logTerminal');
+    const line = document.createElement('span');
+    line.className = 'log-line log-divider';
+    line.textContent = '─'.repeat(60);
+    terminal.appendChild(line);
+}
+
+function updateStartBtn() {
+    // Enable Start only if at least one checked table has a file
+    const anyReady = TABLES.some(t => {
+        const cb = document.querySelector(`.table-check[data-table="${t}"]`);
+        return cb && cb.checked && fileState[t];
+    });
+    document.getElementById('btnStart').disabled = !anyReady;
+}
+
+function syncRowState(table) {
+    const cb  = document.querySelector(`.table-check[data-table="${table}"]`);
+    const row = document.getElementById(`row-${table}`);
+    if (!cb || !row) return;
+    if (cb.checked) {
+        row.classList.add('active');
+    } else {
+        row.classList.remove('active');
+        // Clear file if deselected
+        delete fileState[table];
+        resetDropZone(table);
+    }
+    updateStartBtn();
+}
+
+function resetDropZone(table) {
+    const dz = document.getElementById(`dz-${table}`);
+    const fi = document.getElementById(`fi-${table}`);
+    if (!dz || !fi) return;
+    dz.classList.remove('has-file');
+    dz.innerHTML = `<i class="fas fa-file-excel"></i>${getPlaceholder(table)}`;
+    fi.value = '';
+}
+
+function getPlaceholder(table) {
+    const map = {
+        collections:   'Click or drop Report_*.xlsx here',
+        validation:    'Click or drop CustomerValidation_*.xlsx here',
+        disconnections:'Click or drop Disconnections_*.xlsx here',
+        adjustments:   'Click or drop Adjustments_*.xlsx here',
+        discounts:     'Click or drop Discounts_*.xlsx here',
+        customers:     'Click or drop Customers_*.xlsx here',
+    };
+    return map[table] || 'Click to select file';
+}
+
+function attachFile(table, file) {
+    if (!file) return;
+    if (!file.name.match(/\.(xlsx|xls)$/i)) {
+        alert(`Please select an Excel file (.xlsx / .xls) for ${table}.`);
+        return;
+    }
+    fileState[table] = file;
+    const dz = document.getElementById(`dz-${table}`);
+    if (dz) {
+        dz.classList.add('has-file');
+        dz.innerHTML = `<i class="fas fa-check-circle"></i>${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+    }
+    updateStartBtn();
+}
+
+// ── Wire up each table row ──────────────────────────────────────────────────
+TABLES.forEach(table => {
+    const cb = document.querySelector(`.table-check[data-table="${table}"]`);
+    const dz = document.getElementById(`dz-${table}`);
+    const fi = document.getElementById(`fi-${table}`);
+
+    // Checkbox toggle
+    if (cb) {
+        cb.addEventListener('change', () => syncRowState(table));
+        syncRowState(table); // apply initial state
+    }
+
+    // Click drop-zone → open file picker
+    if (dz && fi) {
+        dz.addEventListener('click', () => fi.click());
+
+        dz.addEventListener('dragover', e => {
+            e.preventDefault();
+            dz.style.borderColor = 'var(--primary-color)';
+        });
+        dz.addEventListener('dragleave', () => {
+            dz.style.borderColor = '';
+        });
+        dz.addEventListener('drop', e => {
+            e.preventDefault();
+            dz.style.borderColor = '';
+            const file = e.dataTransfer.files[0];
+            if (file) attachFile(table, file);
+        });
+
+        fi.addEventListener('change', () => {
+            if (fi.files[0]) attachFile(table, fi.files[0]);
+        });
+    }
+});
+
+// ── Select All / Deselect All ────────────────────────────────────────────────
+document.getElementById('btnSelectAll').addEventListener('click', () => {
+    TABLES.forEach(t => {
+        const cb = document.querySelector(`.table-check[data-table="${t}"]`);
+        if (cb) cb.checked = true;
+        syncRowState(t);
+    });
+});
+
+document.getElementById('btnDeselectAll').addEventListener('click', () => {
+    TABLES.forEach(t => {
+        const cb = document.querySelector(`.table-check[data-table="${t}"]`);
+        if (cb) cb.checked = false;
+        syncRowState(t);
+    });
+});
+
+// ── Submit ───────────────────────────────────────────────────────────────────
+document.getElementById('btnStart').addEventListener('click', async () => {
+    const terminal = document.getElementById('logTerminal');
+    terminal.innerHTML = ''; // clear previous run
+
+    const selected = TABLES.filter(t => {
+        const cb = document.querySelector(`.table-check[data-table="${t}"]`);
+        return cb && cb.checked && fileState[t];
+    });
+
+    if (selected.length === 0) {
+        log('⚠  No tables selected with files attached. Nothing to process.', 'log-warn');
+        return;
+    }
+
+    const btn = document.getElementById('btnStart');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing…';
+
+    logDivider();
+    log(`🚀  Starting upload cycle for ${selected.length} table(s)…`, 'log-start');
+    logDivider();
+
+    selected.forEach(t => log(`   ➜  Queued: ${t}  (${fileState[t].name})`, 'log-info'));
+    log('', 'log-info');
+
+    const formData = new FormData();
+    selected.forEach(t => formData.append(`file_${t}`, fileState[t]));
+
+    try {
+        const resp = await fetch('/admin/upload-tables', { method: 'POST', body: formData });
+        const data = await resp.json();
+
+        logDivider();
+
+        // Success results
+        if (data.results && data.results.length > 0) {
+            data.results.forEach(r => {
+                log(`✅  ${r.table.toUpperCase()}`, 'log-success');
+                log(`     Rows processed : ${r.total.toLocaleString()}`, 'log-info');
+                log(`     Added/Updated  : ${r.new.toLocaleString()}`, 'log-success');
+                if (r.duplicates > 0) {
+                    log(`     Duplicates skipped: ${r.duplicates.toLocaleString()}`, 'log-warn');
+                }
+                log('', 'log-info');
+            });
+        }
+
+        // Error results
+        if (data.errors && data.errors.length > 0) {
+            data.errors.forEach(e => {
+                log(`❌  ${e.table.toUpperCase()} FAILED`, 'log-error');
+                log(`     ${e.error}`, 'log-error');
+                log('', 'log-info');
+            });
+        }
+
+        logDivider();
+        const totalNew = (data.results || []).reduce((s, r) => s + r.new, 0);
+        const totalRows = (data.results || []).reduce((s, r) => s + r.total, 0);
+        log(`🏁  CYCLE COMPLETE — ${totalNew.toLocaleString()} records added/updated from ${totalRows.toLocaleString()} rows.`,
+            data.errors && data.errors.length > 0 ? 'log-warn' : 'log-success');
+        logDivider();
+
+    } catch (err) {
+        log(`❌  Network or server error: ${err.message}`, 'log-error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-rocket"></i> Start Processing Files';
+    }
+});
+</script>
+{% endblock %}

@@ -61,6 +61,15 @@
         font-size: clamp(0.85rem, 0.2vw + 0.8rem, 1.1rem);
         font-weight: 700;
     }
+    
+    /* Bordered Table for Weekly Breakdown */
+    .dashboard-table-bordered th,
+    .dashboard-table-bordered td {
+        border: 1px solid var(--border-color) !important;
+    }
+    .dashboard-table-bordered {
+        border: 1px solid var(--border-color);
+    }
 </style>
 
 <div class="dashboard-grid" style="display: grid; grid-template-columns: 1fr 1.5fr 1fr; gap: 20px; margin-bottom: 25px;">
@@ -83,7 +92,7 @@
     <div class="card" style="padding: 1rem;">
         <h3 class="card-title">📆 Weekly Performance Breakdown</h3>
         <div style="overflow-x: auto;">
-            <table class="dashboard-table" style="min-width: 450px;">
+            <table class="dashboard-table dashboard-table-bordered" style="min-width: 450px;">
                 <thead>
                     <tr>
                         <th class="bu-column">Business Unit</th>

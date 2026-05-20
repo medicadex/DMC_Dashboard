@@ -2,14 +2,19 @@ import sys
 import threading
 import time
 import os
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, session, make_response, Response
-from werkzeug.utils import secure_filename
-from db_utils import get_db_engine
-from datetime import datetime, timedelta
+import io
+import math
+import traceback
 import logging
+from functools import wraps
+from datetime import datetime, timedelta
+
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, send_file, session, make_response, Response
+from werkzeug.utils import secure_filename
 from sqlalchemy import text
 import pandas as pd
-from functools import wraps
+
+from db_utils import get_db_engine
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -28,58 +33,48 @@ from utils.security import SessionManager
 from db_utils import get_db_engine
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
+app.secret_key = os.getenv('SECRET_KEY', os.urandom(24))
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 def generate_descriptive_filename(base_name, filters):
     """
-    Generates a descriptive filename based on applied filters.
+    Generates a descriptive filename based on applied filters to exactly match main_app.py nomenclature.
     """
-    parts = [base_name]
     
-    # Handle Officer Type
+    # 1. Determine off_type
     otype = filters.get('otype') or filters.get('otypes')
+    off_type = "All"
     if otype:
         if isinstance(otype, list):
-            if len(otype) == 1: parts.append(otype[0])
-            elif len(otype) > 1: parts.append("MixedTypes")
-        elif otype != 'Both':
-            parts.append(otype)
-            
-    # Handle Period/Date Range
-    if filters.get('period'):
-        parts.append(filters['period'].capitalize())
-    
-    if filters.get('start') and filters.get('end'):
-        parts.append(f"{filters['start']}_to_{filters['end']}")
-    elif filters.get('year'):
-        parts.append(filters['year'])
-        if filters.get('quarter') and filters['quarter'] != 'Full':
-            parts.append(filters['quarter'])
-            
-    # Handle Business Unit
-    bus = filters.get('bu') or filters.get('bus')
-    if bus:
-        if isinstance(bus, list):
-            if len(bus) == 1: parts.append(bus[0])
-            elif len(bus) > 1: parts.append(f"{len(bus)}BUs")
+            if len(otype) == 1:
+                off_type = str(otype[0])
+            elif len(otype) > 1:
+                off_type = "Mixed_Types"
         else:
-            parts.append(bus)
-
-    # Handle Form Type (Job Form specific)
-    if filters.get('ftype'):
-        parts.append(filters['ftype'])
-
-    parts.append(datetime.now().strftime('%Y%m%d_%H%M%S'))
+            if str(otype) != 'Both':
+                off_type = str(otype)
+            
+    off_type = off_type.replace(' ', '_')
+    report_name = str(base_name).replace(' ', '_')
     
-    # Sanitize and join
-    filename = "_".join([str(p) for p in parts if p])
-    # Remove chars that might cause issues in URLs or Filesystems
-    for char in [' ', ',', '/', '\\', ':', '*', '?', '"', '<', '>', '|']:
-        filename = filename.replace(char, "_")
+    # 2. Determine dates
+    start = filters.get('start')
+    end = filters.get('end')
     
-    return f"{filename}.xlsx"
+    if start and end:
+        try:
+            start_fmt = datetime.strptime(start, "%Y-%m-%d").strftime("%d-%m-%Y")
+            end_fmt = datetime.strptime(end, "%Y-%m-%d").strftime("%d-%m-%Y")
+        except Exception:
+            start_fmt = start
+            end_fmt = end
+        
+        filename = f"{off_type}_{report_name}_{start_fmt}_to_{end_fmt}"
+    else:
+        filename = f"{off_type}_{report_name}_Full"
+        
+    return secure_filename(f"{filename}.xlsx")
 
 # ────────────────────────────────────────────────
 # CONFIG
@@ -99,6 +94,18 @@ export_service = ExportService(engine)
 # Cache busting version
 APP_VERSION = "1.1.7"
 ENCRYPTION_SECRET = os.getenv("ENCRYPTION_SECRET")
+
+# In-memory cache for Excel export streaming (Memory leak prevention)
+EXPORT_CACHE = {}  # filename -> {"data": bytes, "timestamp": datetime}
+
+def cache_export_file(filename, data_bytes):
+    """Caches Excel file bytes in memory and prunes entries older than 10 minutes."""
+    now = datetime.now()
+    # Prune expired entries to prevent memory leaks
+    expired = [k for k, v in EXPORT_CACHE.items() if (now - v["timestamp"]).total_seconds() > 600]
+    for k in expired:
+        EXPORT_CACHE.pop(k, None)
+    EXPORT_CACHE[filename] = {"data": data_bytes, "timestamp": now}
 
 @app.context_processor
 def inject_version():
@@ -156,7 +163,8 @@ def login():
                 return jsonify({'success': True, 'user': user_data})
             return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
         except Exception as e:
-            return jsonify({'success': False, 'message': str(e)}), 401
+            logger.error(f"Login error: {e}", exc_info=True)
+            return jsonify({'success': False, 'message': 'An error occurred during authentication.'}), 401
     return render_template('login.html')
 
 @app.route('/logout')
@@ -219,7 +227,8 @@ def report_uploader():
                     "details": result
                 })
             except Exception as e:
-                return jsonify({"error": str(e)}), 500
+                logger.error(f"Uploader process failed: {e}", exc_info=True)
+                return jsonify({"error": "An internal error occurred while processing the uploaded file."}), 500
                 
     return render_template('upload.html', active_page='upload')
     
@@ -266,8 +275,9 @@ def admin_upload_tables():
                     "status":     "success"
                 })
             except Exception as e:
-                logger.error(f"Admin upload failed for '{table_name}': {e}")
-                errors.append({"table": table_name, "error": str(e)})
+                logger.error(f"Admin upload failed for '{table_name}': {e}", exc_info=True)
+                err_msg = str(e) if isinstance(e, (ValueError, KeyError)) else "Internal processing or database error."
+                errors.append({"table": table_name, "error": err_msg})
             finally:
                 # Clean up the uploaded file after processing
                 try:
@@ -305,10 +315,6 @@ def service_worker():
 @login_required
 def get_dashboard_stats():
     try:
-        from sqlalchemy import text
-        from datetime import datetime, timedelta
-        import math
-        
         now = datetime.now()
         today_start = now.strftime('%Y-%m-%d 00:00:00')
         month_start = now.strftime('%Y-%m-01 00:00:00')
@@ -339,7 +345,7 @@ def get_dashboard_stats():
             sql_weeks = """
                 SELECT 
                     c.business_unit,
-                    FLOOR((DAY(p.date_of_payment) - 1) / 7) + 1 as week_num,
+                    CEILING((DAY(p.date_of_payment) + WEEKDAY(p.date_of_payment - INTERVAL DAY(p.date_of_payment)-1 DAY)) / 7) as week_num,
                     SUM(p.amount_paid) as total
                 FROM (
                     SELECT account_number, amount_paid, date_of_payment FROM collections
@@ -404,9 +410,8 @@ def get_dashboard_stats():
             
         return jsonify({'success': True, 'data': data})
     except Exception as e:
-        import logging
-        logging.error(f"Dashboard stats error: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 500
+        logger.error(f"Dashboard stats error: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': 'An internal error occurred while retrieving dashboard statistics.'}), 500
 
 @app.route('/api/autocomplete')
 @login_required
@@ -437,7 +442,8 @@ def api_account_dashboard(account_number):
             return jsonify({"error": "Account not found"}), 404
         return jsonify(data)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Account dashboard error for {account_number}: {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred while retrieving account details."}), 500
 
 @app.route('/api/account/update-start-date', methods=['POST'])
 @login_required
@@ -458,9 +464,8 @@ def api_update_start_date():
             return jsonify({"success": True, "message": message})
         return jsonify({"success": False, "message": message}), 400
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"success": False, "message": str(e)}), 500
+        logger.error(f"Update start date error: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "An internal error occurred while updating the officer start date."}), 500
 
 @app.route('/api/account/update-officer-dates-batch', methods=['POST'])
 @login_required
@@ -480,9 +485,8 @@ def api_update_officer_dates_batch():
             return jsonify({"success": True, "message": message})
         return jsonify({"success": False, "message": message}), 400
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"success": False, "message": str(e)}), 500
+        logger.error(f"Update officer dates batch error: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "An internal error occurred while processing the batch update."}), 500
 
 @app.route('/api/job-form/initial-data')
 @login_required
@@ -491,7 +495,8 @@ def job_form_initial_data():
         bus = job_form_service.get_distinct_values("customers", "business_unit")
         return jsonify({"business_units": bus})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Job form initial data error: {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred while retrieving job form configuration."}), 500
 
 @app.route('/api/job-form/officers')
 @login_required
@@ -504,7 +509,8 @@ def job_form_officers():
         names = job_form_service.get_officer_names(bus, otypes)
         return jsonify(names)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Job form officers error: {e}", exc_info=True)
+        return jsonify([])
 
 @app.route('/api/job-form/feeders')
 @login_required
@@ -517,7 +523,8 @@ def job_form_feeders():
         feeders = job_form_service.get_feeders(bus, names)
         return jsonify(feeders)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Job form feeders error: {e}", exc_info=True)
+        return jsonify([])
 
 @app.route('/api/job-form/dts')
 @login_required
@@ -530,7 +537,8 @@ def job_form_dts():
         dts = job_form_service.get_dt_names(bus, feeders)
         return jsonify(dts)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Job form DTs error: {e}", exc_info=True)
+        return jsonify([])
 
 @app.route('/api/job-form/preview')
 @login_required
@@ -576,7 +584,6 @@ def job_form_preview():
             df_sliced = df
         else:
             per_page = int(per_page_arg)
-            import math
             pages = max(1, math.ceil(total_rows / per_page))
             page = max(1, min(page, pages))
             start_idx = (page - 1) * per_page
@@ -592,9 +599,8 @@ def job_form_preview():
             "totals": totals
         })
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Job form preview error: {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred while generating the preview."}), 500
 
 @app.route('/api/job-form/export', methods=['POST'])
 @login_required
@@ -614,25 +620,28 @@ def job_form_export():
         if df.empty:
             return jsonify({"error": "No data found for selected filters"}), 404
             
-        filename = generate_descriptive_filename("Job_Forms", filters)
-        export_dir = os.path.abspath(app.config['UPLOAD_FOLDER'])
-        os.makedirs(export_dir, exist_ok=True)
-        filepath = os.path.join(export_dir, filename)
-        
-        # Use xlsxwriter engine for robustness
-        with pd.ExcelWriter(filepath, engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False, sheet_name='Job Form')
-        
-        if os.path.exists(filepath):
-            return jsonify({"success": True, "filename": filename})
+        # Generate filename to exactly match job_form_ui.py nomenclature: {off_str}_{form_type}_{stamp}.xlsx
+        officers = filters.get('onames') or []
+        if not officers or len(officers) > 2:
+            off_str = "MultipleOfficers"
         else:
-            return jsonify({"error": "File creation failed"}), 500
+            off_str = "_".join([o.replace(" ", "") for o in officers])
+            
+        form_type = filters.get('ftype', 'Full').replace(" ", "")
+        stamp = datetime.now().strftime('%d-%m-%Y')
+        filename = secure_filename(f"{off_str}_{form_type}_{stamp}.xlsx")
+        
+        # Stream Excel directly into in-memory buffer to prevent memory leaks and disk usage
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Job Form')
+        buffer.seek(0)
+        
+        cache_export_file(filename, buffer.getvalue())
+        return jsonify({"success": True, "filename": filename})
     except Exception as e:
-        import logging
-        logging.error(f"Job Form Export Error: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": f"Export failed: {str(e)}"}), 500
+        logger.error(f"Job Form Export Error: {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred while exporting the job form report."}), 500
 
 @app.route('/api/performance/rank')
 @login_required
@@ -691,7 +700,7 @@ def api_performance_rank():
                 SUM(p.amount_paid) as recovery
             FROM all_payments p
             JOIN customers c ON p.account_number = c.account_number
-            WHERE p.date_of_payment BETWEEN :start AND :end
+            WHERE DATE(p.date_of_payment) BETWEEN :start AND :end
             {otype_clause}
             GROUP BY c.account_officer, c.business_unit, c.officer_type
         """)
@@ -756,9 +765,8 @@ def api_performance_rank():
             "period_end": end
         })
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Performance rank query error: {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred while calculating performance ranking."}), 500
 
 @app.route('/api/performance/export', methods=['POST'])
 @login_required
@@ -803,7 +811,7 @@ def api_performance_export():
                 SUM(p.amount_paid) as 'Total Recovery'
             FROM all_payments p
             JOIN customers c ON p.account_number = c.account_number
-            WHERE p.date_of_payment BETWEEN :start AND :end
+            WHERE DATE(p.date_of_payment) BETWEEN :start AND :end
             {otype_clause}
             GROUP BY c.account_officer, c.business_unit, c.officer_type
             ORDER BY 'Total Recovery' DESC
@@ -830,7 +838,7 @@ def api_performance_export():
         # Reorder columns
         final_df = final_df[['Rank', 'Officer Name', 'Business Unit', 'Officer Type', 'Total Recovery']]
         
-        filename = generate_descriptive_filename("Performance_Ranking", {
+        filename = generate_descriptive_filename("Adv._Variance_Analysis", {
             "otype": otype,
             "period": period,
             "start": start,
@@ -838,18 +846,18 @@ def api_performance_export():
             "year": year,
             "quarter": quarter
         })
-        export_dir = os.path.abspath(app.config['UPLOAD_FOLDER'])
-        os.makedirs(export_dir, exist_ok=True)
-        filepath = os.path.join(export_dir, filename)
         
-        with pd.ExcelWriter(filepath, engine='xlsxwriter') as writer:
+        # Stream Excel directly into in-memory buffer to prevent memory leaks and disk usage
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             final_df.to_excel(writer, index=False, sheet_name='Officer Ranking')
-            
+        buffer.seek(0)
+        
+        cache_export_file(filename, buffer.getvalue())
         return jsonify({"success": True, "filename": filename})
     except Exception as e:
-        import logging
-        logging.error(f"Performance Export Error: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Performance Export Error: {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred while exporting performance ranking."}), 500
 
 @app.route('/api/payments/preview')
 @login_required
@@ -874,7 +882,46 @@ def api_payments_preview():
         })
 
     try:
-        sql = text("""
+        # Calculate Grand Totals and Total Rows globally using SQL
+        count_sql = text("""
+            SELECT 
+                COUNT(*) as total_rows,
+                SUM(p.amount_paid) as total_amount
+            FROM all_payments p
+            JOIN customers c ON p.account_number = c.account_number
+            WHERE c.business_unit IN :bus
+            AND c.officer_type IN :otypes
+            AND c.account_officer IN :onames
+            AND DATE(p.date_of_payment) BETWEEN :start AND :end
+        """)
+        
+        with engine.connect() as conn:
+            params = {
+                "bus": tuple(bus),
+                "otypes": tuple(otypes),
+                "onames": tuple(onames),
+                "start": start_date,
+                "end": end_date
+            }
+            count_res = conn.execute(count_sql, params).fetchone()
+            total_rows = int(count_res[0]) if count_res and count_res[0] else 0
+            total_amount_paid = float(count_res[1]) if count_res and count_res[1] else 0.0
+            
+        totals = {
+            "amount_paid": total_amount_paid
+        }
+        if per_page_arg.lower() == 'all':
+            per_page = total_rows if total_rows > 0 else 50
+            pages = 1
+            limit_clause = ""
+        else:
+            per_page = int(per_page_arg)
+            pages = max(1, math.ceil(total_rows / per_page)) if total_rows > 0 else 1
+            page = max(1, min(page, pages))
+            offset = (page - 1) * per_page
+            limit_clause = f" LIMIT {per_page} OFFSET {offset}"
+
+        sql = text(f"""
             SELECT 
                 p.date_of_payment, 
                 p.account_number, 
@@ -897,44 +944,29 @@ def api_payments_preview():
             WHERE c.business_unit IN :bus
             AND c.officer_type IN :otypes
             AND c.account_officer IN :onames
-            AND p.date_of_payment BETWEEN :start AND :end
+            AND DATE(p.date_of_payment) BETWEEN :start AND :end
             ORDER BY p.date_of_payment DESC
+            {limit_clause}
         """)
         
         with engine.connect() as conn:
-            results = conn.execute(sql, {
-                "bus": tuple(bus),
-                "otypes": tuple(otypes),
-                "onames": tuple(onames),
-                "start": start_date,
-                "end": end_date
-            }).fetchall()
+            results = conn.execute(sql, params).fetchall()
             
-        records = [dict(r._mapping) for r in results]
-        
-        # Calculate Grand Totals
-        total_amount_paid = sum(float(r.get('amount_paid') or 0) for r in records)
-        totals = {
-            "amount_paid": total_amount_paid
-        }
-        
-        total_rows = len(records)
-        
-        if per_page_arg.lower() == 'all':
-            per_page = total_rows
-            pages = 1
-            sliced_records = records
-        else:
-            per_page = int(per_page_arg)
-            import math
-            pages = max(1, math.ceil(total_rows / per_page))
-            page = max(1, min(page, pages))
-            start_idx = (page - 1) * per_page
-            end_idx = start_idx + per_page
-            sliced_records = records[start_idx:end_idx]
+        records = []
+        for r in results:
+            row = dict(r._mapping)
+            dop = row.get('date_of_payment')
+            if dop:
+                if isinstance(dop, (datetime, pd.Timestamp)):
+                    row['date_of_payment'] = dop.strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    row['date_of_payment'] = str(dop)
+            else:
+                row['date_of_payment'] = ''
+            records.append(row)
             
         return jsonify({
-            "data": sliced_records,
+            "data": records,
             "total_rows": total_rows,
             "pages": pages,
             "current_page": page,
@@ -942,9 +974,8 @@ def api_payments_preview():
             "totals": totals
         })
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Payments preview query error: {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred while generating the payments preview."}), 500
 
 @app.route('/api/payments/export', methods=['POST'])
 @login_required
@@ -975,7 +1006,7 @@ def api_payments_export():
                 COALESCE(afs.total_adjustments, 0) as 'Total Adjustment', 
                 (SELECT SUM(op.amount_paid) FROM other_payments op 
                  WHERE op.account_number = p.account_number 
-                 AND op.date_of_payment BETWEEN :start AND :end) as 'Other Payment',
+                 AND DATE(op.date_of_payment) BETWEEN :start AND :end) as 'Other Payment',
                 COALESCE(afs.outstanding_balance, 0) as 'Outstanding Balance', 
                 COALESCE(afs.payment_plan, 'No') as 'Payment Plan (Yes/No)',
                 c.account_officer as 'Account Officer'
@@ -985,7 +1016,7 @@ def api_payments_export():
             WHERE c.business_unit IN :bus
             AND c.officer_type IN :otypes
             AND c.account_officer IN :onames
-            AND p.date_of_payment BETWEEN :start AND :end
+            AND DATE(p.date_of_payment) BETWEEN :start AND :end
             ORDER BY p.date_of_payment DESC
         """)
         
@@ -1001,6 +1032,10 @@ def api_payments_export():
             
         if df.empty:
             return jsonify({"error": "No data found for selected criteria"}), 404
+
+        # Convert the 'Date of Payment' column to a clean string format %Y-%m-%d %H:%M:%S before Excel export
+        if 'Date of Payment' in df.columns:
+            df['Date of Payment'] = pd.to_datetime(df['Date of Payment']).dt.strftime('%Y-%m-%d %H:%M:%S')
             
         filename = generate_descriptive_filename("Payment_Listing", {
             "bu": bus,
@@ -1008,22 +1043,18 @@ def api_payments_export():
             "start": start_date,
             "end": end_date
         })
-        export_dir = os.path.abspath(app.config['UPLOAD_FOLDER'])
-        os.makedirs(export_dir, exist_ok=True)
-        filepath = os.path.join(export_dir, filename)
         
-        # Use xlsxwriter engine for robustness
-        with pd.ExcelWriter(filepath, engine='xlsxwriter') as writer:
+        # Stream Excel directly into in-memory buffer to prevent memory leaks and disk usage
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             df.to_excel(writer, index=False, sheet_name='Payments')
-            
-        if os.path.exists(filepath):
-            return jsonify({"success": True, "filename": filename})
-        else:
-            return jsonify({"error": "Failed to generate Excel file"}), 500
+        buffer.seek(0)
+        
+        cache_export_file(filename, buffer.getvalue())
+        return jsonify({"success": True, "filename": filename})
     except Exception as e:
-        import logging
-        logging.error(f"Payment Export Error: {str(e)}")
-        return jsonify({"error": f"Export failed: {str(e)}"}), 500
+        logger.error(f"Payment Export Error: {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred while exporting the payments report."}), 500
 
 @app.route('/api/customers/preview')
 @login_required
@@ -1046,8 +1077,47 @@ def api_customers_preview():
         })
 
     try:
+        # Calculate Grand Totals and Total Rows globally using SQL
+        count_sql = text("""
+            SELECT 
+                COUNT(*) as total_rows,
+                SUM(COALESCE(afs.total_payments, 0)) as sum_payments,
+                SUM(c.closing_balance - COALESCE(afs.total_payments, 0) - COALESCE(afs.total_discounts, 0) - COALESCE(afs.total_adjustments, 0)) as sum_outstanding
+            FROM customers c
+            LEFT JOIN account_financial_summary afs ON c.account_number = afs.account_number
+            WHERE c.business_unit IN :bus
+            AND c.officer_type IN :otypes
+            AND c.account_officer IN :onames
+        """)
+        
+        with engine.connect() as conn:
+            params = {
+                "bus": tuple(bus),
+                "otypes": tuple(otypes),
+                "onames": tuple(onames)
+            }
+            count_res = conn.execute(count_sql, params).fetchone()
+            total_rows = int(count_res[0]) if count_res and count_res[0] else 0
+            total_payments_global = float(count_res[1]) if count_res and count_res[1] else 0.0
+            total_outstanding_global = float(count_res[2]) if count_res and count_res[2] else 0.0
+
+        totals = {
+            "total_payments": total_payments_global,
+            "outstanding_balance": total_outstanding_global
+        }
+        if per_page_arg.lower() == 'all':
+            per_page = total_rows if total_rows > 0 else 50
+            pages = 1
+            limit_clause = ""
+        else:
+            per_page = int(per_page_arg)
+            pages = max(1, math.ceil(total_rows / per_page)) if total_rows > 0 else 1
+            page = max(1, min(page, pages))
+            offset = (page - 1) * per_page
+            limit_clause = f" LIMIT {per_page} OFFSET {offset}"
+
         # Complex query to get all requested fields, aligning with main_app.py standards
-        sql = text("""
+        sql = text(f"""
             SELECT 
                 c.account_number, 
                 c.account_name, 
@@ -1059,36 +1129,23 @@ def api_customers_preview():
                 c.dt_name,
                 v.phone_number,
                 c.closing_balance,
-                COALESCE(p.total_payments, 0) as total_payments,
-                COALESCE(d.total_discounts_approved, 0) as total_discounts_approved,
-                COALESCE(a.total_adjustments_approved, 0) as total_adjustments_approved,
+                COALESCE(afs.total_payments, 0) as total_payments,
+                COALESCE(afs.total_discounts, 0) as total_discounts_approved,
+                COALESCE(afs.total_adjustments, 0) as total_adjustments_approved,
                 lp.last_payment_date
             FROM customers c
-            LEFT JOIN (SELECT account_number, SUM(amount_paid) as total_payments FROM all_payments GROUP BY account_number) p ON c.account_number = p.account_number
+            LEFT JOIN account_financial_summary afs ON c.account_number = afs.account_number
             LEFT JOIN (SELECT account_number, MAX(date_of_payment) as last_payment_date FROM collections GROUP BY account_number) lp ON c.account_number = lp.account_number
-            LEFT JOIN (
-                SELECT account_number, 
-                    SUM(CASE WHEN LOWER(status) = 'approved' OR LOWER(user_who_approved) LIKE '%okoye%' OR LOWER(user_who_approved) LIKE '%forstinus%' THEN discounted_amount ELSE 0 END) as total_discounts_approved
-                FROM discounts GROUP BY account_number
-            ) d ON c.account_number = d.account_number
-            LEFT JOIN (
-                SELECT account_number, 
-                    SUM(CASE WHEN LOWER(status) = 'approved' OR LOWER(user_who_approved_adjustment) LIKE '%okoye%' OR LOWER(user_who_approved_adjustment) LIKE '%forstinus%' THEN adjustment_amount ELSE 0 END) as total_adjustments_approved
-                FROM adjustments GROUP BY account_number
-            ) a ON c.account_number = a.account_number
             LEFT JOIN (SELECT account_number, phone_number FROM validation WHERE id IN (SELECT MAX(id) FROM validation GROUP BY account_number)) v ON c.account_number = v.account_number
             WHERE c.business_unit IN :bus
             AND c.officer_type IN :otypes
             AND c.account_officer IN :onames
             ORDER BY c.closing_balance DESC
+            {limit_clause}
         """)
         
         with engine.connect() as conn:
-            results = conn.execute(sql, {
-                "bus": tuple(bus),
-                "otypes": tuple(otypes),
-                "onames": tuple(onames)
-            }).fetchall()
+            results = conn.execute(sql, params).fetchall()
             
         processed_data = []
         for r in results:
@@ -1105,31 +1162,8 @@ def api_customers_preview():
             
             processed_data.append(row)
             
-        # Calculate Grand Totals
-        total_payments = sum(float(r.get('total_payments') or 0) for r in processed_data)
-        total_outstanding = sum(float(r.get('outstanding_balance') or 0) for r in processed_data)
-        totals = {
-            "total_payments": total_payments,
-            "outstanding_balance": total_outstanding
-        }
-        
-        total_rows = len(processed_data)
-        
-        if per_page_arg.lower() == 'all':
-            per_page = total_rows
-            pages = 1
-            sliced_data = processed_data
-        else:
-            per_page = int(per_page_arg)
-            import math
-            pages = max(1, math.ceil(total_rows / per_page))
-            page = max(1, min(page, pages))
-            start_idx = (page - 1) * per_page
-            end_idx = start_idx + per_page
-            sliced_data = processed_data[start_idx:end_idx]
-            
         return jsonify({
-            "data": sliced_data,
+            "data": processed_data,
             "total_rows": total_rows,
             "pages": pages,
             "current_page": page,
@@ -1137,9 +1171,8 @@ def api_customers_preview():
             "totals": totals
         })
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Customers preview query error: {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred while generating the customer preview."}), 500
 
 @app.route('/api/customers/export', methods=['POST'])
 @login_required
@@ -1165,23 +1198,13 @@ def api_customers_export():
                 c.dt_name as 'DT Name',
                 v.phone_number as 'Phone Number',
                 c.closing_balance as 'Closing Balance',
-                COALESCE(p.total_payments, 0) as total_payments,
-                COALESCE(d.total_discounts_approved, 0) as total_discounts_approved,
-                COALESCE(a.total_adjustments_approved, 0) as total_adjustments_approved,
+                COALESCE(afs.total_payments, 0) as total_payments,
+                COALESCE(afs.total_discounts, 0) as total_discounts_approved,
+                COALESCE(afs.total_adjustments, 0) as total_adjustments_approved,
                 lp.last_payment_date as 'Last Payment Date'
             FROM customers c
-            LEFT JOIN (SELECT account_number, SUM(amount_paid) as total_payments FROM all_payments GROUP BY account_number) p ON c.account_number = p.account_number
+            LEFT JOIN account_financial_summary afs ON c.account_number = afs.account_number
             LEFT JOIN (SELECT account_number, MAX(date_of_payment) as last_payment_date FROM collections GROUP BY account_number) lp ON c.account_number = lp.account_number
-            LEFT JOIN (
-                SELECT account_number, 
-                    SUM(CASE WHEN LOWER(status) = 'approved' OR LOWER(user_who_approved) LIKE '%okoye%' OR LOWER(user_who_approved) LIKE '%forstinus%' THEN discounted_amount ELSE 0 END) as total_discounts_approved
-                FROM discounts GROUP BY account_number
-            ) d ON c.account_number = d.account_number
-            LEFT JOIN (
-                SELECT account_number, 
-                    SUM(CASE WHEN LOWER(status) = 'approved' OR LOWER(user_who_approved_adjustment) LIKE '%okoye%' OR LOWER(user_who_approved_adjustment) LIKE '%forstinus%' THEN adjustment_amount ELSE 0 END) as total_adjustments_approved
-                FROM adjustments GROUP BY account_number
-            ) a ON c.account_number = a.account_number
             LEFT JOIN (SELECT account_number, phone_number FROM validation WHERE id IN (SELECT MAX(id) FROM validation GROUP BY account_number)) v ON c.account_number = v.account_number
             WHERE c.business_unit IN :bus
             AND c.officer_type IN :otypes
@@ -1221,36 +1244,46 @@ def api_customers_export():
             'Current Payment-Plan Status'
         ]]
             
-        filename = generate_descriptive_filename("Customer_Listing", {
+        filename = generate_descriptive_filename("Customer_Collection", {
             "bu": bus,
             "otypes": otypes
         })
-        export_dir = os.path.abspath(app.config['UPLOAD_FOLDER'])
-        os.makedirs(export_dir, exist_ok=True)
-        filepath = os.path.join(export_dir, filename)
         
-        # Use xlsxwriter engine for robustness
-        with pd.ExcelWriter(filepath, engine='xlsxwriter') as writer:
+        # Stream Excel directly into in-memory buffer to prevent memory leaks and disk usage
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             export_df.to_excel(writer, index=False, sheet_name='Customers')
-            
-        if os.path.exists(filepath):
-            return jsonify({"success": True, "filename": filename})
-        else:
-            return jsonify({"error": "Failed to create export file"}), 500
+        buffer.seek(0)
+        
+        cache_export_file(filename, buffer.getvalue())
+        return jsonify({"success": True, "filename": filename})
     except Exception as e:
-        import logging
-        logging.error(f"Customer Export Error: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": f"Export failed: {str(e)}"}), 500
+        logger.error(f"Customer Export Error: {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred while exporting the customer report."}), 500
 
 @app.route('/download/<filename>')
 @login_required
 def download_file(filename):
+    # Retrieve Excel file from in-memory cache if available (memory leak & disk write prevention)
+    cached = EXPORT_CACHE.pop(filename, None)
+    if cached:
+        buffer = io.BytesIO(cached["data"])
+        return send_file(
+            buffer,
+            download_name=filename,
+            as_attachment=True,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+    
+    # Fallback to local disk uploads directory for older exports or other upload files
     export_dir = os.path.abspath(app.config['UPLOAD_FOLDER'])
-    return send_from_directory(export_dir, filename, as_attachment=True)
+    filepath = os.path.join(export_dir, filename)
+    if os.path.exists(filepath):
+        return send_from_directory(export_dir, filename, as_attachment=True)
+        
+    logger.warning(f"Download requested for non-existent or expired file: {filename}")
+    return jsonify({"error": "File not found or has expired."}), 404
 
 
 if __name__ == '__main__':
-    import os
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

@@ -39,9 +39,25 @@ def _generate_transaction_id(row: pd.Series, table_name: str) -> str:
     elif table_name == 'disconnections':
         base = f"{safe(row.get('account_number'))}_{safe(row.get('disconnection_date'))}"
     elif table_name == 'discounts':
-        base = f"{safe(row.get('account_number'))}_{safe(row.get('date_applied'))}_{safe(row.get('discounted_amount'))}"
+        base = (
+            f"{safe(row.get('account_number'))}_"
+            f"{safe(row.get('date_applied'))}_"
+            f"{safe(row.get('discounted_amount'))}_"
+            f"{safe(row.get('percentage_discount'))}_"
+            f"{safe(row.get('user_who_raised'))}_"
+            f"{safe(row.get('business_unit'))}_"
+            f"{safe(row.get('undertaking'))}"
+        )
     elif table_name == 'adjustments':
-        base = f"{safe(row.get('account_number'))}_{safe(row.get('date_applied'))}_{safe(row.get('adjustment_amount'))}"
+        base = (
+            f"{safe(row.get('account_number'))}_"
+            f"{safe(row.get('date_applied'))}_"
+            f"{safe(row.get('adjustment_amount'))}_"
+            f"{safe(row.get('user_who_raised_adjustment'))}_"
+            f"{safe(row.get('business_unit'))}_"
+            f"{safe(row.get('undertaking'))}_"
+            f"{safe(row.get('remark'))}"
+        )
     elif table_name == 'resolutions':
         base = f"{safe(row.get('account_number'))}_{safe(row.get('resolution_date'))}"
     else:
@@ -187,6 +203,7 @@ class UploadService:
                 if conflict_key and conflict_key in cols_to_insert:
                     update_cols = [c for c in cols_to_insert if c != conflict_key]
                     if update_cols:
+                        verb = "REPLACE"
                         update_clause = ", ".join(f"`{c}` = VALUES(`{c}`)" for c in update_cols)
                         merge_sql = text(
                             f"INSERT INTO `{table_name}` ({escaped_cols}) "
@@ -194,11 +211,13 @@ class UploadService:
                             f"ON DUPLICATE KEY UPDATE {update_clause}"
                         )
                     else:
+                        verb = "INSERT IGNORE"
                         merge_sql = text(
                             f"INSERT IGNORE INTO `{table_name}` ({escaped_cols}) "
                             f"SELECT {escaped_cols} FROM `{staging_table}`"
                         )
                 else:
+                    verb = "INSERT IGNORE"
                     merge_sql = text(
                         f"INSERT IGNORE INTO `{table_name}` ({escaped_cols}) "
                         f"SELECT {escaped_cols} FROM `{staging_table}`"

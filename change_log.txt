@@ -106,3 +106,131 @@ UI/UX:
 - Fixed currency symbol (₦) wrapping and alignment on the `home.html` dashboard tables
   by using inline spans (`<span class="cur">₦</span>`) and setting `white-space: nowrap` 
   on amount columns to prevent vertical stacking in narrow views.
+
+--------------------------------------------------
+Date: 2026-05-20
+Developer: Antigravity
+Summary: Pagination and Grand Totals Synchronization in Web Project
+
+UI/UX:
+- Standardized data table previews in `payments.html`, `customers.html`, and `job_form.html` to consume paginated JSON API response structures from the backend.
+- Implemented robust, highly responsive pagination navigation bars (per-page limit dropdown: 50, 100, 200, All; "Previous" and "Next" buttons; current page display) inside each preview dashboard card.
+- Appended a beautiful, styled table footer `<tfoot>` in all three listing previews summarizing numeric columns (Recovery Amounts, Customer Payments, Outstanding Balances, closing balances, pos/other payments, adjustments, and discounts) in real-time.
+- Designed a fully dynamic columns mapping in `job_form.html` footer to seamlessly align numeric grand totals regardless of user-selected columns.
+- Resolved Javascript runtime TypeError (`data.map is not a function` / `data.length is undefined`) on customer, payment, and job form previews by transitioning client-side rendering from legacy raw list processing to paginated data arrays.
+
+--------------------------------------------------
+Date: 2026-05-20
+Developer: Antigravity
+Summary: Relocated Pagination Controls Above Table Previews in Web Project
+
+UI/UX:
+- Shifted the pagination navigation bar (`.pagination-bar`) container directly above the data preview table container (`.table-container`) in all listing preview templates (`payments.html`, `customers.html`, and `job_form.html`).
+- Optimized vertical hierarchy by converting top-margin rules into bottom-margin rules (e.g., `margin-bottom: 15px`) to provide visual breathing room between controls and live table layouts.
+- Ensured consistent user experience across Payments Listing, Customers Listing, and Job Form Creator interfaces.
+
+--------------------------------------------------
+Date: 2026-05-20
+Developer: Antigravity
+Summary: Boxed Data Preview Tables in Web Project
+
+UI/UX:
+- Implemented a standard boxed grid layout for preview tables in `payments.html`, `customers.html`, and `job_form.html`.
+- Added thin borders (`border: 1px solid var(--border-color)`) on all `th` and `td` table elements to box and separate cells elegantly.
+- Styled header blocks with semi-transparent IE PLC magenta background and responsive cell hover highlights (`tr:hover`) for optimized readability.
+
+--------------------------------------------------
+Date: 2026-05-20
+Developer: Antigravity
+Summary: Time-Accurate Payment Previews and Exports
+
+Database:
+- Optimized `/api/payments/preview` and `/api/payments/export` queries by replacing `p.date_of_payment BETWEEN :start AND :end` with `DATE(p.date_of_payment) BETWEEN :start AND :end` to support single-day filter matching.
+- Adjusted subquery in `/api/payments/export` on `other_payments` table to use `DATE(op.date_of_payment)` comparison.
+
+UI/UX:
+- Standardized date rendering in payment preview by explicitly converting raw datetimes into `%Y-%m-%d %H:%M:%S` format strings.
+- Formatted `Date of Payment` in the exported Excel spreadsheet to `%Y-%m-%d %H:%M:%S` strings via Pandas to prevent truncation and default `00:00:00` rendering.
+
+--------------------------------------------------
+Date: 2026-05-20
+Developer: Antigravity
+Summary: Restored Activity Log Terminal in Admin Table Manager
+
+UI/UX:
+- Restored the missing `logTerminal` HTML container to the Admin Table Manager interface (`admin_upload.html`).
+- Resolved a silent JavaScript crash (`TypeError: Cannot read properties of null`) caused by attempts to clear/append to the missing log terminal on file processing initialization.
+- Ensured file processing and deduplication status are logged in real-time.
+
+
+--------------------------------------------------
+Date: 2026-05-20
+Developer: Antigravity
+Summary: Bulk File Processing Pipeline Fix & Activity Log Restoration
+
+- Backend
+  * Restored the missing Activity Log UI component in admin_upload.html to fix a silent client-side crash.
+  * Resolved NameError regarding 'verb' in upload_service.py by dynamically defining the variable when constructing staging table merge queries.
+
+--------------------------------------------------
+Date: 2026-05-20
+Developer: Antigravity
+
+--------------------------------------------------
+Date: 2026-05-20
+Developer: Antigravity
+Summary: Bulk File Processing Pipeline Fix & Activity Log Restoration
+
+- Backend
+  * Restored the missing Activity Log UI component in admin_upload.html to fix a silent client-side crash.
+  * Resolved NameError regarding 'verb' in upload_service.py by dynamically defining the variable when constructing staging table merge queries.
+
+--------------------------------------------------
+Date: 2026-05-20
+Developer: Antigravity
+Summary: Dashboard Performance Metrics Fix
+
+Database:
+- Corrected SQL queries for /api/performance/rank and /api/performance/export endpoints in  pp.py.
+- Added DATE() function wrapper to p.date_of_payment in BETWEEN :start AND :end clauses to prevent time-inclusive datetime truncation of today's collections.
+
+--------------------------------------------------
+Date: 2026-05-20
+Developer: Antigravity
+Summary: Dashboard Weekly Logic Migration
+
+UI/UX & Logic:
+- Updated /api/dashboard-stats in  pp.py to calculate the Weekly Breakdown table using standard Calendar Weeks of the month instead of flat 7-day intervals.
+- The new formula dynamically aligns week numbers based on the days of the week, with Week 1 starting on the 1st of the month, and subsequent weeks resetting strictly on Mondays.
+
+--------------------------------------------------
+Date: 2026-05-20
+Developer: Antigravity
+Summary: Memory Leak Prevention & Enterprise Global Standards Implementation
+
+Architecture:
+- Migrated all inline module imports (including standard libraries like math, traceback, and external packages like pandas) to the top of `app.py` for full PEP 8 compliance.
+- Established a thread-safe in-memory cache (`EXPORT_CACHE`) in `app.py` to store temporary spreadsheet bytes generated in-memory.
+- Implemented automatic, time-based cache pruning (`cache_export_file`) to discard cached file data older than 10 minutes, completely preventing memory leaks.
+- Refactored `/download/<filename>` to stream Excel spreadsheets directly from `EXPORT_CACHE` via Flask's `send_file`, utilizing a safe fallback to disk.
+
+Performance:
+- Eliminated disk write-reads across all Excel export endpoints (`/api/payments/export`, `/api/performance/export`, `/api/customers/export`, and `/api/job-form/export`) by using `io.BytesIO` streams, preventing concurrent file-write collisions and hard disk exhaustion.
+
+Security:
+- Secured and sanitized all error responses across all API endpoints by mapping raw database details or stack traces to logging handlers internally while returning generic, safe JSON error messages to the frontend.
+
+
+--------------------------------------------------
+Date: 2026-05-20
+Developer: Antigravity
+Summary: Excel Export Filename Nomenclature Alignment & Session Authentication Fix
+
+Security & Session Management:
+- Resolved a critical login session omission in the `/login` POST handler of `app.py`. The authenticated user dictionary is now properly saved into the Flask session (`session['user'] = user_data`), resolving an infinite redirection loop that forced valid users back to `/login` upon reaching the `/dashboard`.
+
+UI/UX & Architecture:
+- Aligned all Excel export filenames in `app.py` directly with `main_app.py` (desktop application) nomenclature formats:
+  * Modified Customer Listing export to match "Customer_Collection" base name instead of "Customer_Listing".
+  * Modified Performance Ranking export to match "Adv._Variance_Analysis" base name instead of "Performance_Ranking".
+  * Replaced the general Job Form export filename with the desktop's specialized nomenclature logic resolving to {off_str}_{form_type}_{stamp}.xlsx, checking for single or multiple officers and specific form types.

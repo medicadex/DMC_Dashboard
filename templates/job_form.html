@@ -93,18 +93,14 @@
         text-align: left;
         padding: 12px 15px;
         font-weight: 600;
-        border-bottom: 2px solid var(--border-color);
+        border: 1px solid var(--border-color);
         white-space: nowrap;
     }
 
     td {
         padding: 10px 15px;
-        border-bottom: 1px solid var(--border-color);
+        border: 1px solid var(--border-color);
         color: var(--text-color);
-    }
-
-    tr:last-child td {
-        border-bottom: none;
     }
 
     .btn-group {
@@ -265,7 +261,7 @@
         <!-- 4. Job Form Type -->
         <div class="form-group">
             <label class="form-label">4. Job Form Type:</label>
-            <select class="form-control-web" id="formType" onchange="updatePreview()">
+            <select class="form-control-web" id="formType" onchange="updatePreview(true)">
                 <option value="Full">Full</option>
                 <option value="Defaulted payment Plan">Defaulted payment Plan</option>
                 <option value="Exclude Payment Plan">Exclude Payment Plan</option>
@@ -329,20 +325,9 @@
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <h3 style="margin: 0; font-size: 18px; color: var(--primary-color);">👁️ Data Preview</h3>
     </div>
-    <div class="table-container">
-        <table id="previewTable">
-            <thead>
-                <tr id="tableHeader"></tr>
-            </thead>
-            <tbody id="tableBody"></tbody>
-            <tfoot>
-                <tr id="tableFooter" style="background: rgba(243, 44, 145, 0.05); font-weight: bold; border-top: 2px solid var(--border-color);"></tr>
-            </tfoot>
-        </table>
-    </div>
-    
+
     <!-- Pagination bar -->
-    <div class="pagination-bar" style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px; background: var(--card-bg); padding: 10px 15px; border-radius: 8px; border: 1px solid var(--border-color);">
+    <div class="pagination-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; background: var(--card-bg); padding: 10px 15px; border-radius: 8px; border: 1px solid var(--border-color);">
         <div style="display: flex; align-items: center; gap: 10px;">
             <span style="font-size: 13px; color: var(--text-muted);">Show</span>
             <select id="perPageSelect" class="form-control-web" style="padding: 4px 8px; font-size: 13px; border-radius: 6px; width: auto;" onchange="changePerPage()">
@@ -360,12 +345,28 @@
             <button class="select-all-btn" id="nextPageBtn" onclick="changePage(1)" style="font-size: 13px; font-weight: 600;">Next <i class="fas fa-chevron-right"></i></button>
         </div>
     </div>
+
+    <div class="table-container">
+        <table id="previewTable">
+            <thead>
+                <tr id="tableHeader"></tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+            <tfoot>
+                <tr id="tableFooter" style="background: rgba(243, 44, 145, 0.05); font-weight: bold; border-top: 2px solid var(--border-color);"></tr>
+            </tfoot>
+        </table>
+    </div>
 </div>
 
 {% endblock %}
 
 {% block scripts %}
 <script>
+    let currentPage = 1;
+    let totalPages = 1;
+    let currentPerPage = 50;
+
     const defaultCols = [
         "account_number", "account_name", "account_address", "closing_balance", 
         "pos_other_payments", "adjustment", "discount", 
@@ -476,13 +477,17 @@
         const dtList = document.getElementById('dtList');
         dtList.innerHTML = dts.map(dt => `
             <div class="select-item">
-                <input type="checkbox" value="${dt}" onchange="updatePreview()">
+                <input type="checkbox" value="${dt}" onchange="updatePreview(true)">
                 <span>${dt}</span>
             </div>
         `).join('');
     }
 
-    async function updatePreview() {
+    async function updatePreview(resetPage = false) {
+        if (resetPage) {
+            currentPage = 1;
+        }
+
         const bus = getSelected('buList');
         const types = getSelected('typeList');
         const names = getSelected('officerList');
@@ -490,7 +495,11 @@
         const dts = getSelected('dtList');
         const formType = document.getElementById('formType').value;
 
-        if (dts.length === 0) return;
+        if (dts.length === 0) {
+            document.getElementById('previewContainer').style.display = 'none';
+            document.getElementById('totalRows').innerText = "0";
+            return;
+        }
 
         const query = new URLSearchParams();
         bus.forEach(b => query.append('bu', b));
@@ -499,23 +508,78 @@
         feeders.forEach(f => query.append('feeder', f));
         dts.forEach(d => query.append('dt', d));
         query.append('form_type', formType);
+        query.append('page', currentPage);
+        query.append('per_page', currentPerPage);
 
         const response = await fetch(`/api/job-form/preview?${query.toString()}`);
         const data = await response.json();
         
-        if (data.length > 0) {
+        if (data.error) {
+            alert("Error from server: " + data.error);
+            return;
+        }
+
+        const totalRows = data.total_rows || 0;
+        totalPages = data.pages || 1;
+        currentPage = data.current_page || 1;
+        const rows = data.data || [];
+
+        if (totalRows > 0) {
             document.getElementById('previewContainer').style.display = 'block';
-            document.getElementById('totalRows').innerText = data.length === 100 ? "100+" : data.length;
+            document.getElementById('totalRows').innerText = totalRows.toLocaleString();
             
-            // Update Table
-            const cols = Object.keys(data[0]);
+            // Update Table Header
+            const cols = Object.keys(rows[0]);
             document.getElementById('tableHeader').innerHTML = cols.map(c => `<th>${c.replace(/_/g, ' ')}</th>`).join('');
-            document.getElementById('tableBody').innerHTML = data.map(row => `
+            
+            // Update Table Body
+            document.getElementById('tableBody').innerHTML = rows.map(row => `
                 <tr>
-                    ${cols.map(c => `<td>${row[c] || ''}</td>`).join('')}
+                    ${cols.map(c => {
+                        const val = row[c];
+                        if (["closing_balance", "pos_other_payments", "adjustment", "discount", "outstanding_balance"].includes(c)) {
+                            return `<td style="font-weight: 600;">${parseFloat(val || 0).toLocaleString()}</td>`;
+                        }
+                        return `<td>${val || ''}</td>`;
+                    }).join('')}
                 </tr>
             `).join('');
+
+            // Update Dynamic Grand Totals Footer
+            const grandTotals = data.totals || {};
+            document.getElementById('tableFooter').innerHTML = cols.map((col, index) => {
+                if (index === 0) {
+                    return `<td style="text-align: right; padding: 12px 15px; font-weight: bold;">GRAND TOTAL</td>`;
+                }
+                if (["closing_balance", "pos_other_payments", "adjustment", "discount", "outstanding_balance"].includes(col)) {
+                    const val = grandTotals[col] || 0;
+                    return `<td style="color: var(--primary-color); padding: 12px 15px; font-weight: bold;">₦${val.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>`;
+                }
+                return `<td></td>`;
+            }).join('');
+
+            // Update Pagination Text and Controls
+            document.getElementById('pageNumberText').innerText = `Page ${currentPage} of ${totalPages}`;
+            document.getElementById('prevPageBtn').disabled = (currentPage === 1);
+            document.getElementById('nextPageBtn').disabled = (currentPage === totalPages);
+        } else {
+            document.getElementById('previewContainer').style.display = 'none';
+            document.getElementById('totalRows').innerText = "0";
         }
+    }
+
+    function changePage(direction) {
+        const targetPage = currentPage + direction;
+        if (targetPage >= 1 && targetPage <= totalPages) {
+            currentPage = targetPage;
+            updatePreview();
+        }
+    }
+
+    function changePerPage() {
+        currentPerPage = document.getElementById('perPageSelect').value;
+        currentPage = 1;
+        updatePreview();
     }
 
     async function downloadJobForm() {
@@ -590,7 +654,7 @@
         if (listId === 'buList' || listId === 'typeList') updateOfficers();
         else if (listId === 'officerList') updateFeeders();
         else if (listId === 'feederList') updateDTs();
-        else if (listId === 'dtList') updatePreview();
+        else if (listId === 'dtList') updatePreview(true);
     }
 </script>
 {% endblock %}

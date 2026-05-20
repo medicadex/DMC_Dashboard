@@ -602,6 +602,24 @@ def job_form_preview():
         logger.error(f"Job form preview error: {e}", exc_info=True)
         return jsonify({"error": "An internal error occurred while generating the preview."}), 500
 
+@app.route('/api/job-form/count')
+@login_required
+def job_form_count():
+    filters = {
+        'bus': request.args.getlist('bu'),
+        'otypes': request.args.getlist('type'),
+        'onames': request.args.getlist('name'),
+        'feeders': request.args.getlist('feeder'),
+        'dts': request.args.getlist('dt'),
+        'ftype': request.args.get('form_type', 'Full')
+    }
+    try:
+        count = job_form_service.count_job_form_rows(filters)
+        return jsonify({"count": count})
+    except Exception as e:
+        logger.error(f"Job Form Count Error: {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred while counting rows."}), 500
+
 @app.route('/api/job-form/export', methods=['POST'])
 @login_required
 def job_form_export():
@@ -620,6 +638,26 @@ def job_form_export():
         if df.empty:
             return jsonify({"error": "No data found for selected filters"}), 404
             
+        # Rename columns to Pretty Titles for export to match main_app.py nomenclature
+        pretty_names = {
+            "account_number": "Account Number", 
+            "account_name": "Name", 
+            "account_address": "Address", 
+            "closing_balance": "Closing Balance",
+            "pos_other_payments": "POS/Other Payments",
+            "adjustment": "Adjustment",
+            "discount": "Discount",
+            "outstanding_balance": "Outstanding Balance",
+            "payment_plan_status": "Status",
+            "last_payment_date": "Last Payment Date",
+            "phone_number": "Phone",
+            "dt_name": "DT Name",
+            "feeder": "Feeder",
+            "account_officer": "Account Officer"
+        }
+        actual_remapping = {k: v for k, v in pretty_names.items() if k in df.columns}
+        df.rename(columns=actual_remapping, inplace=True)
+
         # Generate filename to exactly match job_form_ui.py nomenclature: {off_str}_{form_type}_{stamp}.xlsx
         officers = filters.get('onames') or []
         if not officers or len(officers) > 2:
@@ -642,6 +680,7 @@ def job_form_export():
     except Exception as e:
         logger.error(f"Job Form Export Error: {e}", exc_info=True)
         return jsonify({"error": "An internal error occurred while exporting the job form report."}), 500
+
 
 @app.route('/api/performance/rank')
 @login_required

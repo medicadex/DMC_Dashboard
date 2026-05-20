@@ -234,3 +234,19 @@ UI/UX & Architecture:
   * Modified Customer Listing export to match "Customer_Collection" base name instead of "Customer_Listing".
   * Modified Performance Ranking export to match "Adv._Variance_Analysis" base name instead of "Performance_Ranking".
   * Replaced the general Job Form export filename with the desktop's specialized nomenclature logic resolving to {off_str}_{form_type}_{stamp}.xlsx, checking for single or multiple officers and specific form types.
+
+--------------------------------------------------
+Date: 2026-05-20
+Developer: Antigravity
+Summary: Job Form Creator Row Count and Column Nomenclature Alignment
+
+Database:
+- Implemented `/api/job-form/count` endpoint in `app.py` to count output records matching user-selected filters using the optimized `count_job_form_rows` service method.
+
+UI/UX:
+- Added a new "Check Rows" action button in `job_form.html` to allow users to verify the exact number of output rows matching their configured parameters prior to exporting data.
+- Enhanced the row count display in `job_form.html` to show a dynamic loading state ("⏳ Counting...") while requesting counts from the backend.
+- Changed file download logic in `job_form.html` from dynamic simulated link clicks (`link.click()`) to direct navigation via `window.location.href`, resolving potential browser download blocking.
+
+Architecture:
+- Added column renaming in `/api/job-form/export` in `app.py` to map raw database headers to their pretty-cased, professional equivalent titles (matching the exact nomenclature style of the desktop app `main_app.py` / `job_form_ui.py`).

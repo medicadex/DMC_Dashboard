@@ -327,7 +327,7 @@
 
 <div class="card preview-section" id="previewContainer" style="display: none;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <h3 style="margin: 0; font-size: 18px; color: var(--primary-color);">👁️ Data Preview (Top 100 Rows)</h3>
+        <h3 style="margin: 0; font-size: 18px; color: var(--primary-color);">👁️ Data Preview</h3>
     </div>
     <div class="table-container">
         <table id="previewTable">
@@ -335,7 +335,30 @@
                 <tr id="tableHeader"></tr>
             </thead>
             <tbody id="tableBody"></tbody>
+            <tfoot>
+                <tr id="tableFooter" style="background: rgba(243, 44, 145, 0.05); font-weight: bold; border-top: 2px solid var(--border-color);"></tr>
+            </tfoot>
         </table>
+    </div>
+    
+    <!-- Pagination bar -->
+    <div class="pagination-bar" style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px; background: var(--card-bg); padding: 10px 15px; border-radius: 8px; border: 1px solid var(--border-color);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 13px; color: var(--text-muted);">Show</span>
+            <select id="perPageSelect" class="form-control-web" style="padding: 4px 8px; font-size: 13px; border-radius: 6px; width: auto;" onchange="changePerPage()">
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+                <option value="500">500</option>
+                <option value="all">All</option>
+            </select>
+            <span style="font-size: 13px; color: var(--text-muted);">records per page</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <button class="select-all-btn" id="prevPageBtn" onclick="changePage(-1)" style="font-size: 13px; font-weight: 600;"><i class="fas fa-chevron-left"></i> Prev</button>
+            <span style="font-size: 13px; font-weight: 600; color: var(--text-color);" id="pageNumberText">Page 1 of 1</span>
+            <button class="select-all-btn" id="nextPageBtn" onclick="changePage(1)" style="font-size: 13px; font-weight: 600;">Next <i class="fas fa-chevron-right"></i></button>
+        </div>
     </div>
 </div>
 

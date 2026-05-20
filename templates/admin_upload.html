@@ -342,11 +342,28 @@
         </div>
     </div>
 
-    <!-- ── Activity Log ── -->
-    <div class="section-card">
-        <h3 class="section-title"><i class="fas fa-terminal"></i> Activity Log</h3>
-        <div class="log-terminal" id="logTerminal">
-            <span class="log-info">// Ready. Select tables and attach files, then click Start.</span>
+    <!-- ── Officer Change Dates Modal ── -->
+    <div id="officerModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 9999; justify-content: center; align-items: center;">
+        <div class="section-card" style="width: 500px; max-width: 90%; background: var(--card-bg); border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.25); border: 1px solid var(--border-color); padding: 24px; margin-bottom: 0;">
+            <h3 class="section-title" style="border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 16px;">
+                <i class="fas fa-calendar-alt"></i> Account Officer Changes
+            </h3>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 18px; line-height: 1.5;">
+                New recovery officers were assigned to customer accounts in this upload. Please set their respective effective start dates below:
+            </p>
+            <form id="officerDatesForm">
+                <div id="officerFieldsWrap" style="max-height: 220px; overflow-y: auto; margin-bottom: 20px; padding-right: 5px;">
+                    <!-- Dynamically populated rows -->
+                </div>
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button type="button" class="btn-toggle" id="btnCancelModal" style="background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.2); color: #f87171;">
+                        Cancel (Use Default)
+                    </button>
+                    <button type="submit" class="btn-start" id="btnSaveModal" style="width: auto; margin-top: 0; padding: 8px 20px;">
+                        <i class="fas fa-save"></i> Save & Apply
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -538,6 +555,150 @@ document.getElementById('btnStart').addEventListener('click', async () => {
                     log(`     Duplicates skipped: ${r.duplicates.toLocaleString()}`, 'log-warn');
                 }
                 log('', 'log-info');
+            });
+        }
+
+        // Check for officer changes in results
+        let changes = null;
+        if (data.results && data.results.length > 0) {
+            const customerResult = data.results.find(r => r.table === 'customers');
+            if (customerResult && customerResult.officer_changes && Object.keys(customerResult.officer_changes).length > 0) {
+                changes = customerResult.officer_changes;
+            }
+        }
+
+        if (changes) {
+            logDivider();
+            log('👥  Account Officer changes detected. Opening start-date assignment modal...', 'log-warn');
+            logDivider();
+            
+            // Populate and show the modal
+            const wrapper = document.getElementById('officerFieldsWrap');
+            wrapper.innerHTML = '';
+            
+            Object.entries(changes).forEach(([officer, accounts]) => {
+                const row = document.createElement('div');
+                row.style.marginBottom = '12px';
+                row.style.display = 'flex';
+                row.style.flexDirection = 'column';
+                row.style.gap = '5px';
+                
+                const label = document.createElement('label');
+                label.style.fontWeight = '600';
+                label.style.fontSize = '13px';
+                label.style.color = 'var(--text-color)';
+                label.textContent = `${officer} (${accounts.length} Accounts)`;
+                
+                const input = document.createElement('input');
+                input.type = 'date';
+                input.className = 'officer-date-input';
+                input.required = true;
+                input.style.padding = '8px';
+                input.style.borderRadius = '6px';
+                input.style.border = '1px solid var(--border-color)';
+                input.style.background = 'var(--bg-color)';
+                input.style.color = 'var(--text-color)';
+                input.style.fontSize = '13px';
+                
+                const today = new Date();
+                const year = today.getFullYear();
+                const month = String(today.getMonth() + 1).padStart(2, '0');
+                input.value = `${year}-${month}-01`;
+                
+                input.dataset.officer = officer;
+                input.dataset.accounts = JSON.stringify(accounts);
+                
+                row.appendChild(label);
+                row.appendChild(input);
+                wrapper.appendChild(row);
+            });
+            
+            const modal = document.getElementById('officerModal');
+            modal.style.display = 'flex';
+            
+            // Handle submission
+            await new Promise((resolve) => {
+                const form = document.getElementById('officerDatesForm');
+                const cancelBtn = document.getElementById('btnCancelModal');
+                
+                const cleanup = () => {
+                    modal.style.display = 'none';
+                    form.onsubmit = null;
+                    cancelBtn.onclick = null;
+                };
+
+                cancelBtn.onclick = async () => {
+                    log('⚠  Start-date entry cancelled. Applying current month default start dates to RDS...', 'log-warn');
+                    const defaultUpdates = [];
+                    const today = new Date();
+                    const year = today.getFullYear();
+                    const month = String(today.getMonth() + 1).padStart(2, '0');
+                    const defaultDate = `${year}-${month}-01 00:00:00`;
+                    
+                    Object.entries(changes).forEach(([officer, accounts]) => {
+                        accounts.forEach(acc => {
+                            defaultUpdates.push({ account_number: acc, start_date: defaultDate });
+                        });
+                    });
+                    
+                    try {
+                        log('   ⏳ Applying defaults to database in batch...', 'log-info');
+                        const r = await fetch('/api/account/update-officer-dates-batch', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ updates: defaultUpdates })
+                        });
+                        const resData = await r.json();
+                        if (resData.success) {
+                            log('   ✅ Default dates successfully applied directly to cloud database.', 'log-success');
+                        } else {
+                            log(`   ❌ Failed to apply defaults: ${resData.message}`, 'log-error');
+                        }
+                    } catch (err) {
+                        log(`   ❌ Error applying defaults: ${err.message}`, 'log-error');
+                    }
+                    cleanup();
+                    resolve();
+                };
+
+                form.onsubmit = async (e) => {
+                    e.preventDefault();
+                    
+                    const saveBtn = document.getElementById('btnSaveModal');
+                    saveBtn.disabled = true;
+                    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
+                    
+                    const batchUpdates = [];
+                    const inputs = document.querySelectorAll('.officer-date-input');
+                    inputs.forEach(input => {
+                        const dateStr = `${input.value} 00:00:00`;
+                        const accounts = JSON.parse(input.dataset.accounts);
+                        accounts.forEach(acc => {
+                            batchUpdates.push({ account_number: acc, start_date: dateStr });
+                        });
+                    });
+                    
+                    log(`   ⏳ Applying custom dates to ${batchUpdates.length} accounts in batch...`, 'log-info');
+                    try {
+                        const r = await fetch('/api/account/update-officer-dates-batch', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ updates: batchUpdates })
+                        });
+                        const resData = await r.json();
+                        if (resData.success) {
+                            log('   ✅ Custom start dates successfully applied directly to cloud database.', 'log-success');
+                        } else {
+                            log(`   ❌ Failed to apply custom dates: ${resData.message}`, 'log-error');
+                        }
+                    } catch (err) {
+                        log(`   ❌ Error saving dates: ${err.message}`, 'log-error');
+                    }
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = '<i class="fas fa-save"></i> Save & Apply';
+                    cleanup();
+                    resolve();
+                };
             });
         }
 

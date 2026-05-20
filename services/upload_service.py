@@ -171,16 +171,39 @@ class UploadService:
                         progress_callback(int(((i + 1) / num_chunks) * 90))
 
                 # ── Step 2: Merge staging → live table on RDS ──────────────────
-                # Deduplication strategy:
-                #   REPLACE INTO  → for master/reference tables (upsert existing rows)
-                #   INSERT IGNORE → for transactional records   (skip true duplicates)
-                verb = "REPLACE" if table_name in UPSERT_TABLES else "INSERT IGNORE"
-
+                # Deduplication strategy: Use ON DUPLICATE KEY UPDATE to avoid wiping skipped columns
+                conflict_keys = {
+                    'customers': 'account_number',
+                    'staff': 'username',
+                    'performance_config': 'bu_name',
+                    'discounts': 'transaction_id',
+                    'adjustments': 'transaction_id',
+                    'resolutions': 'transaction_id'
+                }
+                
+                conflict_key = conflict_keys.get(table_name)
                 escaped_cols = ", ".join(f"`{c}`" for c in cols_to_insert)
-                merge_sql = text(
-                    f"{verb} INTO `{table_name}` ({escaped_cols}) "
-                    f"SELECT {escaped_cols} FROM `{staging_table}`"
-                )
+                
+                if conflict_key and conflict_key in cols_to_insert:
+                    update_cols = [c for c in cols_to_insert if c != conflict_key]
+                    if update_cols:
+                        update_clause = ", ".join(f"`{c}` = VALUES(`{c}`)" for c in update_cols)
+                        merge_sql = text(
+                            f"INSERT INTO `{table_name}` ({escaped_cols}) "
+                            f"SELECT {escaped_cols} FROM `{staging_table}` "
+                            f"ON DUPLICATE KEY UPDATE {update_clause}"
+                        )
+                    else:
+                        merge_sql = text(
+                            f"INSERT IGNORE INTO `{table_name}` ({escaped_cols}) "
+                            f"SELECT {escaped_cols} FROM `{staging_table}`"
+                        )
+                else:
+                    merge_sql = text(
+                        f"INSERT IGNORE INTO `{table_name}` ({escaped_cols}) "
+                        f"SELECT {escaped_cols} FROM `{staging_table}`"
+                    )
+
                 result = conn.execute(merge_sql)
 
                 # rowcount semantics:
@@ -238,7 +261,19 @@ class UploadService:
 
         try:
             df_mapped = self._load_and_map_dataframe(table_name, filepath)
+            
+            # Detect officer changes programmatically before writing to DB
+            officer_changes = {}
+            if table_name.lower() in ['customers', 'accounts']:
+                try:
+                    from services.account_service import AccountService
+                    account_service = AccountService(self.engine, self.repo, None)
+                    officer_changes = account_service.detect_officer_changes_in_df(df_mapped)
+                except Exception as e:
+                    logging.error(f"Error detecting officer changes programmatically in web: {e}")
+                    
             result = self._push_to_rds(table_name, df_mapped, progress_callback=progress_callback)
+            result['officer_changes'] = officer_changes
 
             self.repo.log_activity(
                 username, "UPLOAD_SUCCESS",
@@ -281,7 +316,18 @@ class UploadService:
             else:
                 df_mapped = df.copy()
 
+            # Detect officer changes programmatically before writing to DB
+            officer_changes = {}
+            if table_name.lower() in ['customers', 'accounts']:
+                try:
+                    from services.account_service import AccountService
+                    account_service = AccountService(self.engine, self.repo, None)
+                    officer_changes = account_service.detect_officer_changes_in_df(df_mapped)
+                except Exception as e:
+                    logging.error(f"Error detecting officer changes programmatically in web: {e}")
+
             result = self._push_to_rds(table_name, df_mapped, progress_callback=progress_callback)
+            result['officer_changes'] = officer_changes
 
             self.repo.log_activity(
                 username, "BULK_UPLOAD_SUCCESS",

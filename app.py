@@ -262,6 +262,7 @@ def admin_upload_tables():
                     "total":      result.get('total', 0),
                     "new":        result.get('new', 0),
                     "duplicates": result.get('duplicates', 0),
+                    "officer_changes": result.get('officer_changes', {}),
                     "status":     "success"
                 })
             except Exception as e:
@@ -438,6 +439,51 @@ def api_account_dashboard(account_number):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/account/update-start-date', methods=['POST'])
+@login_required
+def api_update_start_date():
+    if session['user'].get('role') != 'Admin':
+        return jsonify({"success": False, "message": "Unauthorized. Admins only."}), 403
+    
+    data = request.get_json()
+    account_number = data.get('account_number')
+    new_date = data.get('start_date')
+    
+    if not account_number or not new_date:
+        return jsonify({"success": False, "message": "Account number and start date are required"}), 400
+        
+    try:
+        success, message = account_service.update_officer_start_date(account_number, new_date)
+        if success:
+            return jsonify({"success": True, "message": message})
+        return jsonify({"success": False, "message": message}), 400
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/account/update-officer-dates-batch', methods=['POST'])
+@login_required
+def api_update_officer_dates_batch():
+    if session['user'].get('role') != 'Admin':
+        return jsonify({"success": False, "message": "Unauthorized. Admins only."}), 403
+        
+    data = request.get_json()
+    updates = data.get('updates') # list of dicts: [{'account_number': '...', 'start_date': '...'}]
+    
+    if not updates or not isinstance(updates, list):
+        return jsonify({"success": False, "message": "List of updates is required"}), 400
+        
+    try:
+        success, message = account_service.update_officer_start_dates_batch(updates)
+        if success:
+            return jsonify({"success": True, "message": message})
+        return jsonify({"success": False, "message": message}), 400
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
 @app.route('/api/job-form/initial-data')
 @login_required
 def job_form_initial_data():
@@ -498,13 +544,56 @@ def job_form_preview():
         'ftype': request.args.get('form_type', 'Full')
     }
     # Default columns for preview
-    columns = ["account_number", "account_name", "account_address", "closing_balance", "outstanding_balance", "account_officer"]
+    columns = ["account_number", "account_name", "account_address", "closing_balance", "pos_other_payments", "adjustment", "discount", "outstanding_balance", "account_officer"]
+    
+    page = int(request.args.get('page', 1))
+    per_page_arg = request.args.get('per_page', '50')
+    
     try:
         df = job_form_service.get_job_form_data(filters, columns)
         if df.empty:
-            return jsonify([])
-        return jsonify(df.head(100).to_dict(orient='records'))
+            return jsonify({
+                "data": [],
+                "total_rows": 0,
+                "pages": 0,
+                "current_page": 1,
+                "per_page": 50,
+                "totals": {}
+            })
+            
+        # Calculate Grand Totals over the entire filtered dataset
+        numeric_cols = ["closing_balance", "pos_other_payments", "adjustment", "discount", "outstanding_balance"]
+        totals = {}
+        for col in numeric_cols:
+            if col in df.columns:
+                totals[col] = float(df[col].fillna(0).sum())
+                
+        total_rows = int(df.shape[0])
+        
+        if per_page_arg.lower() == 'all':
+            per_page = total_rows
+            pages = 1
+            df_sliced = df
+        else:
+            per_page = int(per_page_arg)
+            import math
+            pages = max(1, math.ceil(total_rows / per_page))
+            page = max(1, min(page, pages))
+            start_idx = (page - 1) * per_page
+            end_idx = start_idx + per_page
+            df_sliced = df.iloc[start_idx:end_idx]
+            
+        return jsonify({
+            "data": df_sliced.to_dict(orient='records'),
+            "total_rows": total_rows,
+            "pages": pages,
+            "current_page": page,
+            "per_page": per_page,
+            "totals": totals
+        })
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/job-form/export', methods=['POST'])
@@ -771,8 +860,18 @@ def api_payments_preview():
     start_date = request.args.get('start')
     end_date = request.args.get('end')
     
+    page = int(request.args.get('page', 1))
+    per_page_arg = request.args.get('per_page', '50')
+    
     if not bus or not otypes or not onames:
-        return jsonify([])
+        return jsonify({
+            "data": [],
+            "total_rows": 0,
+            "pages": 0,
+            "current_page": 1,
+            "per_page": 50,
+            "totals": {}
+        })
 
     try:
         sql = text("""
@@ -800,7 +899,6 @@ def api_payments_preview():
             AND c.account_officer IN :onames
             AND p.date_of_payment BETWEEN :start AND :end
             ORDER BY p.date_of_payment DESC
-            LIMIT 500
         """)
         
         with engine.connect() as conn:
@@ -812,8 +910,40 @@ def api_payments_preview():
                 "end": end_date
             }).fetchall()
             
-        return jsonify([dict(r._mapping) for r in results])
+        records = [dict(r._mapping) for r in results]
+        
+        # Calculate Grand Totals
+        total_amount_paid = sum(float(r.get('amount_paid') or 0) for r in records)
+        totals = {
+            "amount_paid": total_amount_paid
+        }
+        
+        total_rows = len(records)
+        
+        if per_page_arg.lower() == 'all':
+            per_page = total_rows
+            pages = 1
+            sliced_records = records
+        else:
+            per_page = int(per_page_arg)
+            import math
+            pages = max(1, math.ceil(total_rows / per_page))
+            page = max(1, min(page, pages))
+            start_idx = (page - 1) * per_page
+            end_idx = start_idx + per_page
+            sliced_records = records[start_idx:end_idx]
+            
+        return jsonify({
+            "data": sliced_records,
+            "total_rows": total_rows,
+            "pages": pages,
+            "current_page": page,
+            "per_page": per_page,
+            "totals": totals
+        })
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/payments/export', methods=['POST'])
@@ -902,8 +1032,18 @@ def api_customers_preview():
     otypes = request.args.getlist('type')
     onames = request.args.getlist('officer')
     
+    page = int(request.args.get('page', 1))
+    per_page_arg = request.args.get('per_page', '50')
+    
     if not bus or not otypes or not onames:
-        return jsonify([])
+        return jsonify({
+            "data": [],
+            "total_rows": 0,
+            "pages": 0,
+            "current_page": 1,
+            "per_page": 50,
+            "totals": {}
+        })
 
     try:
         # Complex query to get all requested fields, aligning with main_app.py standards
@@ -941,7 +1081,6 @@ def api_customers_preview():
             AND c.officer_type IN :otypes
             AND c.account_officer IN :onames
             ORDER BY c.closing_balance DESC
-            LIMIT 500
         """)
         
         with engine.connect() as conn:
@@ -966,7 +1105,37 @@ def api_customers_preview():
             
             processed_data.append(row)
             
-        return jsonify(processed_data)
+        # Calculate Grand Totals
+        total_payments = sum(float(r.get('total_payments') or 0) for r in processed_data)
+        total_outstanding = sum(float(r.get('outstanding_balance') or 0) for r in processed_data)
+        totals = {
+            "total_payments": total_payments,
+            "outstanding_balance": total_outstanding
+        }
+        
+        total_rows = len(processed_data)
+        
+        if per_page_arg.lower() == 'all':
+            per_page = total_rows
+            pages = 1
+            sliced_data = processed_data
+        else:
+            per_page = int(per_page_arg)
+            import math
+            pages = max(1, math.ceil(total_rows / per_page))
+            page = max(1, min(page, pages))
+            start_idx = (page - 1) * per_page
+            end_idx = start_idx + per_page
+            sliced_data = processed_data[start_idx:end_idx]
+            
+        return jsonify({
+            "data": sliced_data,
+            "total_rows": total_rows,
+            "pages": pages,
+            "current_page": page,
+            "per_page": per_page,
+            "totals": totals
+        })
     except Exception as e:
         import traceback
         traceback.print_exc()

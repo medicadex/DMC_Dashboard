@@ -132,3 +132,132 @@ class AccountService:
                 "resolution": resolution,
                 "history": history
             }
+
+    def update_officer_start_dates_batch(self, updates):
+        """
+        Updates start dates for a batch of account officer shifts.
+        'updates' is a list of dicts: [{'account_number': '...', 'start_date': 'YYYY-MM-DD'}, ...]
+        """
+        success_count = 0
+        with self.engine.begin() as conn:
+            for item in updates:
+                acc = item.get('account_number')
+                new_date = item.get('start_date')
+                if not acc or not new_date:
+                    continue
+                    
+                # 1. Find the current history record
+                current_history = conn.execute(
+                    text("SELECT id FROM customer_officer_history WHERE account_number = :acc AND is_current = 1"),
+                    {"acc": acc}
+                ).fetchone()
+
+                if not current_history:
+                    continue
+
+                current_id = current_history[0]
+
+                # 2. Update the current record's start_date
+                conn.execute(
+                    text("UPDATE customer_officer_history SET start_date = :new_date WHERE id = :id"),
+                    {"new_date": new_date, "id": current_id}
+                )
+
+                # 3. Update the previous record's end_date
+                prev_history = conn.execute(
+                    text("SELECT id FROM customer_officer_history WHERE account_number = :acc AND id < :curr_id ORDER BY id DESC LIMIT 1"),
+                    {"acc": acc, "curr_id": current_id}
+                ).fetchone()
+
+                if prev_history:
+                    prev_id = prev_history[0]
+                    conn.execute(
+                        text("UPDATE customer_officer_history SET end_date = :new_date WHERE id = :id"),
+                        {"new_date": new_date, "id": prev_id}
+                    )
+                success_count += 1
+                
+        return True, f"Successfully updated {success_count} account officer start dates in batch."
+
+    def update_officer_start_date(self, account_number, new_start_date):
+        """Updates the start date of the current officer and the end date of the previous one."""
+        with self.engine.begin() as conn:
+            # 1. Find the current history record
+            current_history = conn.execute(
+                text("SELECT id FROM customer_officer_history WHERE account_number = :acc AND is_current = 1"),
+                {"acc": account_number}
+            ).fetchone()
+
+            if not current_history:
+                return False, "No active history record found for this account."
+
+            current_id = current_history[0]
+
+            # 2. Update the current record's start_date
+            conn.execute(
+                text("UPDATE customer_officer_history SET start_date = :new_date WHERE id = :id"),
+                {"new_date": new_start_date, "id": current_id}
+            )
+
+            # 3. Update the previous record's end_date
+            prev_history = conn.execute(
+                text("SELECT id FROM customer_officer_history WHERE account_number = :acc AND id < :curr_id ORDER BY id DESC LIMIT 1"),
+                {"acc": account_number, "curr_id": current_id}
+            ).fetchone()
+
+            if prev_history:
+                prev_id = prev_history[0]
+                conn.execute(
+                    text("UPDATE customer_officer_history SET end_date = :new_date WHERE id = :id"),
+                    {"new_date": new_start_date, "id": prev_id}
+                )
+
+            return True, "Start date updated successfully."
+
+    def detect_officer_changes_in_df(self, df_uploaded):
+        """Compares uploaded dataframe with existing database to detect account officer changes."""
+        import pandas as pd
+        if 'account_number' not in df_uploaded.columns or 'account_officer' not in df_uploaded.columns:
+            return {}
+            
+        acc_list = df_uploaded['account_number'].dropna().unique().tolist()
+        if not acc_list:
+            return {}
+            
+        existing_officers = {}
+        try:
+            with self.engine.connect() as conn:
+                chunk_size = 900
+                for i in range(0, len(acc_list), chunk_size):
+                    chunk = acc_list[i:i+chunk_size]
+                    placeholders = ", ".join([f":acc{idx}" for idx in range(len(chunk))])
+                    params = {f"acc{idx}": acc for idx, acc in enumerate(chunk)}
+                    
+                    query = f"SELECT account_number, account_officer FROM customers WHERE account_number IN ({placeholders})"
+                    res = conn.execute(text(query), params).fetchall()
+                    for acc, officer in res:
+                        existing_officers[str(acc).strip()] = str(officer).strip() if officer else ""
+        except Exception as e:
+            import logging
+            logging.error(f"Error querying existing officers: {e}")
+            return {}
+            
+        changes = {}
+        for _, row in df_uploaded.iterrows():
+            acc = row.get('account_number')
+            new_officer = row.get('account_officer')
+            if pd.isnull(acc) or pd.isnull(new_officer):
+                continue
+                
+            acc_str = str(acc).strip()
+            new_officer_str = str(new_officer).strip()
+            
+            if acc_str in existing_officers:
+                old_officer_str = existing_officers[acc_str]
+                if old_officer_str.lower() != new_officer_str.lower() and new_officer_str:
+                    if new_officer_str not in changes:
+                        changes[new_officer_str] = []
+                    changes[new_officer_str].append(acc_str)
+                    
+        return changes
+

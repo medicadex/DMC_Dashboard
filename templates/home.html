@@ -3,6 +3,38 @@
 {% block page_title %}Executive Homepage{% endblock %}
 
 {% block content %}
+{% if session.get('user') and session['user']['role'] == 'Vendor' %}
+<!-- VENDOR PORTAL HOMEPAGE BANNER -->
+<div class="card" style="padding: 40px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; min-height: 400px; background: linear-gradient(135deg, rgba(243, 44, 145, 0.05) 0%, rgba(30, 41, 59, 0.7) 100%); border-left: 5px solid var(--primary-color); box-shadow: 0 8px 30px rgba(0,0,0,0.15); border-radius: 12px; margin-top: 20px;">
+    <div class="welcome-icon" style="width: 80px; height: 80px; border-radius: 50%; background: rgba(243, 44, 145, 0.05); border: 2px dashed var(--primary-color); display: flex; align-items: center; justify-content: center; font-size: 35px; color: var(--primary-color); animation: pulse-glow 2s infinite;">
+        <i class="fas fa-handshake"></i>
+    </div>
+    <div style="max-width: 600px;">
+        <h2 style="margin: 0 0 10px 0; font-size: 24px; color: var(--text-color); font-weight: 700;">
+            <span id="vendor-greeting">Welcome</span>, <span style="color: var(--primary-color);">{{ session['user']['full_name'] }}</span>!
+        </h2>
+        <h3 style="margin: 0 0 20px 0; font-size: 16px; color: var(--text-muted); font-weight: 500;">
+            Welcome to the Ikeja Electric Debt Management and Control Suite.
+        </h3>
+        <p style="margin: 0 0 30px 0; font-size: 14.5px; color: var(--text-color); line-height: 1.6; opacity: 0.9;">
+            Please use the navigation tabs on the left side to view your customer listing, monitor your collections performance, review historical payments, and search for specific account details using the Account Lookup tool.
+        </p>
+        <div style="border-top: 1px solid var(--border-color); padding-top: 20px; font-size: 13px; color: var(--text-muted); font-weight: 600;">
+            Thank you.
+        </div>
+    </div>
+</div>
+
+<script>
+    const hr = new Date().getHours();
+    let greet = "Welcome";
+    if (hr < 12) greet = "Good Morning";
+    else if (hr < 17) greet = "Good Afternoon";
+    else greet = "Good Evening";
+    const greetEl = document.getElementById('vendor-greeting');
+    if (greetEl) greetEl.innerText = greet;
+</script>
+{% else %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
     <div>
         <p style="color: var(--text-muted); margin: 0; font-size: 0.95rem;">Real-time performance metrics and recovery trends across all units.</p>
@@ -271,4 +303,5 @@ document.addEventListener("DOMContentLoaded", () => {
     loadDashboardStats();
 });
 </script>
+{% endif %}
 {% endblock %}

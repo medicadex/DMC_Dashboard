@@ -167,6 +167,70 @@ def login():
             return jsonify({'success': False, 'message': 'An error occurred during authentication.'}), 401
     return render_template('login.html')
 
+@app.route('/vendor-login', methods=['GET', 'POST'])
+def vendor_login():
+    if request.method == 'POST':
+        data = request.get_json()
+        vendor_name = data.get('vendor_name', '').strip()
+        
+        if len(vendor_name) < 3:
+            return jsonify({'success': False, 'message': 'Vendor name must be at least 3 characters long.'}), 400
+            
+        try:
+            prefix = f"{vendor_name[:3].lower()}%"
+            sql = text("""
+                SELECT DISTINCT account_officer 
+                FROM customers 
+                WHERE officer_type = 'Vendor' AND LOWER(account_officer) LIKE :p 
+                ORDER BY account_officer ASC
+            """)
+            with engine.connect() as conn:
+                rows = conn.execute(sql, {"p": prefix}).fetchall()
+                
+            matches = [r[0] for r in rows if r[0]]
+            
+            if not matches:
+                # Log fail
+                staff_repo.log_activity(vendor_name, "VENDOR_LOGIN_FAILED", f"No vendor match for prefix '{vendor_name[:3]}'", event_type='MAJOR')
+                return jsonify({'success': False, 'message': 'Vendor agency name or prefix code not recognized.'}), 401
+                
+            # If the user entered an exact match case-insensitive, prioritize it
+            exact_match = None
+            for m in matches:
+                if m.lower() == vendor_name.lower():
+                    exact_match = m
+                    break
+                    
+            if exact_match:
+                matched_name = exact_match
+            elif len(matches) == 1:
+                matched_name = matches[0]
+            else:
+                return jsonify({
+                    'success': False,
+                    'multiple_matches': True,
+                    'matches': matches,
+                    'message': 'Multiple matching vendors found. Please select yours.'
+                })
+                
+            # Log success
+            staff_repo.log_activity(matched_name, "VENDOR_LOGIN_SUCCESS", f"Matched prefix '{vendor_name[:3]}' to '{matched_name}'", event_type='MAJOR')
+            
+            # Bind session
+            session['user'] = {
+                "id": 0,
+                "username": matched_name,
+                "full_name": matched_name,
+                "role": "Vendor"
+            }
+            session_manager.update_activity()
+            return jsonify({'success': True, 'vendor': matched_name})
+        except Exception as e:
+            logger.error(f"Vendor login error: {e}", exc_info=True)
+            return jsonify({'success': False, 'message': 'An internal error occurred during authentication.'}), 500
+            
+    return render_template('vendor_login.html')
+
 @app.route('/logout')
 def logout():
     session.clear()
@@ -206,6 +270,8 @@ def performance_full_report():
 @app.route('/report-uploader', methods=['GET', 'POST'])
 @login_required
 def report_uploader():
+    if session.get('user') and session['user']['role'] == 'Vendor':
+        return redirect(url_for('dashboard'))
     if request.method == 'POST':
         if 'file' not in request.files:
             return jsonify({"error": "No file part"}), 400
@@ -421,15 +487,27 @@ def api_autocomplete():
         return jsonify([])
 
     search_term = f"%{query}%"
-    sql = text("""
-        SELECT account_number, account_name, account_address
-        FROM customers
-        WHERE account_number LIKE :q OR account_name LIKE :q OR account_address LIKE :q
-        LIMIT 30
-    """)
+    
+    if session['user']['role'] == 'Vendor':
+        sql = text("""
+            SELECT account_number, account_name, account_address
+            FROM customers
+            WHERE account_officer = :vendor
+              AND (account_number LIKE :q OR account_name LIKE :q OR account_address LIKE :q)
+            LIMIT 30
+        """)
+        params = {"q": search_term, "vendor": session['user']['username']}
+    else:
+        sql = text("""
+            SELECT account_number, account_name, account_address
+            FROM customers
+            WHERE account_number LIKE :q OR account_name LIKE :q OR account_address LIKE :q
+            LIMIT 30
+        """)
+        params = {"q": search_term}
     
     with engine.connect() as conn:
-        results = conn.execute(sql, {"q": search_term}).fetchall()
+        results = conn.execute(sql, params).fetchall()
         
     return jsonify([dict(r._mapping) for r in results])
 
@@ -437,6 +515,14 @@ def api_autocomplete():
 @login_required
 def api_account_dashboard(account_number):
     try:
+        # Enforce Vendor role data isolation at the lookup boundary
+        if session['user']['role'] == 'Vendor':
+            sql = text("SELECT account_officer FROM customers WHERE account_number = :acc")
+            with engine.connect() as conn:
+                row = conn.execute(sql, {"acc": account_number}).fetchone()
+            if not row or row[0] != session['user']['username']:
+                return jsonify({"error": "Access denied. This account is not assigned to your agency."}), 403
+                
         data = account_service.get_account_financials(account_number, session['user']['username'], session['user']['role'], force_online=True)
         if not data:
             return jsonify({"error": "Account not found"}), 404
@@ -492,21 +578,56 @@ def api_update_officer_dates_batch():
 @login_required
 def job_form_initial_data():
     try:
-        bus = job_form_service.get_distinct_values("customers", "business_unit")
+        if session['user']['role'] == 'Vendor':
+            sql = text("SELECT DISTINCT business_unit FROM customers WHERE account_officer = :v AND business_unit IS NOT NULL AND business_unit != '' ORDER BY business_unit ASC")
+            with engine.connect() as conn:
+                res = conn.execute(sql, {"v": session['user']['username']}).fetchall()
+                bus = [r[0] for r in res]
+        else:
+            bus = job_form_service.get_distinct_values("customers", "business_unit")
         return jsonify({"business_units": bus})
     except Exception as e:
         logger.error(f"Job form initial data error: {e}", exc_info=True)
         return jsonify({"error": "An internal error occurred while retrieving job form configuration."}), 500
+
+@app.route('/api/job-form/undertakings')
+@login_required
+def job_form_undertakings():
+    bus = request.args.getlist('bu')
+    if not bus:
+        return jsonify([])
+    try:
+        if session['user']['role'] == 'Vendor':
+            sql = text("""
+                SELECT DISTINCT undertaking 
+                FROM customers 
+                WHERE business_unit IN :bus AND account_officer = :v 
+                  AND undertaking IS NOT NULL AND undertaking != '' 
+                ORDER BY undertaking ASC
+            """)
+            with engine.connect() as conn:
+                res = conn.execute(sql, {"bus": tuple(bus), "v": session['user']['username']}).fetchall()
+                undertakings = [r[0] for r in res]
+        else:
+            undertakings = job_form_service.get_undertakings(bus)
+        return jsonify(undertakings)
+    except Exception as e:
+        logger.error(f"Job form undertakings error: {e}", exc_info=True)
+        return jsonify([])
 
 @app.route('/api/job-form/officers')
 @login_required
 def job_form_officers():
     bus = request.args.getlist('bu')
     otypes = request.args.getlist('type')
+    undertakings = request.args.getlist('undertaking')
     if not bus or not otypes:
         return jsonify([])
     try:
-        names = job_form_service.get_officer_names(bus, otypes)
+        if session['user']['role'] == 'Vendor':
+            names = [session['user']['username']]
+        else:
+            names = job_form_service.get_officer_names(bus, otypes, undertakings=undertakings)
         return jsonify(names)
     except Exception as e:
         logger.error(f"Job form officers error: {e}", exc_info=True)
@@ -517,10 +638,27 @@ def job_form_officers():
 def job_form_feeders():
     bus = request.args.getlist('bu')
     names = request.args.getlist('name')
+    undertakings = request.args.getlist('undertaking')
     if not bus or not names:
         return jsonify([])
     try:
-        feeders = job_form_service.get_feeders(bus, names)
+        if session['user']['role'] == 'Vendor':
+            ut_clause = "AND undertaking IN :uts" if undertakings else ""
+            sql_str = f"""
+                SELECT DISTINCT feeder 
+                FROM customers 
+                WHERE business_unit IN :bus AND account_officer = :v {ut_clause}
+                  AND feeder IS NOT NULL AND feeder != '' 
+                ORDER BY feeder ASC
+            """
+            params = {"bus": tuple(bus), "v": session['user']['username']}
+            if undertakings:
+                params["uts"] = tuple(undertakings)
+            with engine.connect() as conn:
+                res = conn.execute(text(sql_str), params).fetchall()
+                feeders = [r[0] for r in res]
+        else:
+            feeders = job_form_service.get_feeders(bus, names, undertakings=undertakings)
         return jsonify(feeders)
     except Exception as e:
         logger.error(f"Job form feeders error: {e}", exc_info=True)
@@ -531,10 +669,31 @@ def job_form_feeders():
 def job_form_dts():
     bus = request.args.getlist('bu')
     feeders = request.args.getlist('feeder')
+    undertakings = request.args.getlist('undertaking')
     if not bus or not feeders:
         return jsonify([])
     try:
-        dts = job_form_service.get_dt_names(bus, feeders)
+        if session['user']['role'] == 'Vendor':
+            ut_clause = "AND undertaking IN :uts" if undertakings else ""
+            sql_str = f"""
+                SELECT DISTINCT dt_name 
+                FROM customers 
+                WHERE business_unit IN :bus AND account_officer = :v AND feeder IN :feeders {ut_clause}
+                  AND dt_name IS NOT NULL AND dt_name != '' 
+                ORDER BY dt_name ASC
+            """
+            params = {
+                "bus": tuple(bus), 
+                "v": session['user']['username'], 
+                "feeders": tuple(feeders)
+            }
+            if undertakings:
+                params["uts"] = tuple(undertakings)
+            with engine.connect() as conn:
+                res = conn.execute(text(sql_str), params).fetchall()
+                dts = [r[0] for r in res]
+        else:
+            dts = job_form_service.get_dt_names(bus, feeders, undertakings=undertakings)
         return jsonify(dts)
     except Exception as e:
         logger.error(f"Job form DTs error: {e}", exc_info=True)
@@ -543,10 +702,23 @@ def job_form_dts():
 @app.route('/api/job-form/preview')
 @login_required
 def job_form_preview():
+    otypes_val = request.args.getlist('type')
+    onames_val = request.args.getlist('name')
+    bus_val = request.args.getlist('bu')
+    
+    if session['user']['role'] == 'Vendor':
+        otypes_val = ['Vendor']
+        onames_val = [session['user']['username']]
+        if not bus_val:
+            with engine.connect() as conn:
+                res = conn.execute(text("SELECT DISTINCT business_unit FROM customers WHERE account_officer = :v AND business_unit IS NOT NULL AND business_unit != ''"), {"v": session['user']['username']}).fetchall()
+                bus_val = [r[0] for r in res]
+                
     filters = {
-        'bus': request.args.getlist('bu'),
-        'otypes': request.args.getlist('type'),
-        'onames': request.args.getlist('name'),
+        'bus': bus_val,
+        'undertakings': request.args.getlist('undertaking'),
+        'otypes': otypes_val,
+        'onames': onames_val,
         'feeders': request.args.getlist('feeder'),
         'dts': request.args.getlist('dt'),
         'ftype': request.args.get('form_type', 'Full')
@@ -605,10 +777,23 @@ def job_form_preview():
 @app.route('/api/job-form/count')
 @login_required
 def job_form_count():
+    otypes_val = request.args.getlist('type')
+    onames_val = request.args.getlist('name')
+    bus_val = request.args.getlist('bu')
+    
+    if session['user']['role'] == 'Vendor':
+        otypes_val = ['Vendor']
+        onames_val = [session['user']['username']]
+        if not bus_val:
+            with engine.connect() as conn:
+                res = conn.execute(text("SELECT DISTINCT business_unit FROM customers WHERE account_officer = :v AND business_unit IS NOT NULL AND business_unit != ''"), {"v": session['user']['username']}).fetchall()
+                bus_val = [r[0] for r in res]
+                
     filters = {
-        'bus': request.args.getlist('bu'),
-        'otypes': request.args.getlist('type'),
-        'onames': request.args.getlist('name'),
+        'bus': bus_val,
+        'undertakings': request.args.getlist('undertaking'),
+        'otypes': otypes_val,
+        'onames': onames_val,
         'feeders': request.args.getlist('feeder'),
         'dts': request.args.getlist('dt'),
         'ftype': request.args.get('form_type', 'Full')
@@ -624,12 +809,25 @@ def job_form_count():
 @login_required
 def job_form_export():
     data = request.get_json()
+    otypes_val = data.get('type', [])
+    onames_val = data.get('name', [])
+    bus_val = data.get('bu', [])
+    
+    if session['user']['role'] == 'Vendor':
+        otypes_val = ['Vendor']
+        onames_val = [session['user']['username']]
+        if not bus_val:
+            with engine.connect() as conn:
+                res = conn.execute(text("SELECT DISTINCT business_unit FROM customers WHERE account_officer = :v AND business_unit IS NOT NULL AND business_unit != ''"), {"v": session['user']['username']}).fetchall()
+                bus_val = [r[0] for r in res]
+                
     filters = {
-        'bus': data.get('bu'),
-        'otypes': data.get('type'),
-        'onames': data.get('name'),
-        'feeders': data.get('feeder'),
-        'dts': data.get('dt'),
+        'bus': bus_val,
+        'undertakings': data.get('undertaking', []),
+        'otypes': otypes_val,
+        'onames': onames_val,
+        'feeders': data.get('feeder', []),
+        'dts': data.get('dt', []),
         'ftype': data.get('form_type', 'Full')
     }
     columns = data.get('columns', [])
@@ -728,8 +926,12 @@ def api_performance_rank():
 
         # Query all_payments joined with customers for ranking
         otype_clause = ""
+        vendor_clause = ""
         if otype != 'Both':
             otype_clause = "AND c.officer_type = :otype"
+            
+        if session['user']['role'] == 'Vendor':
+            vendor_clause = "AND c.account_officer = :vendor_name"
 
         sql = text(f"""
             SELECT 
@@ -741,12 +943,15 @@ def api_performance_rank():
             JOIN customers c ON p.account_number = c.account_number
             WHERE DATE(p.date_of_payment) BETWEEN :start AND :end
             {otype_clause}
+            {vendor_clause}
             GROUP BY c.account_officer, c.business_unit, c.officer_type
         """)
         
         params = {"start": start, "end": end}
         if otype != 'Both':
             params["otype"] = otype
+        if session['user']['role'] == 'Vendor':
+            params["vendor_name"] = session['user']['username']
 
         with engine.connect() as conn:
             df = pd.read_sql(sql, conn, params=params)
@@ -842,6 +1047,7 @@ def api_performance_export():
 
         # Query
         otype_clause = "AND c.officer_type = :otype" if otype != 'Both' else ""
+        vendor_clause = "AND c.account_officer = :vendor_name" if session['user']['role'] == 'Vendor' else ""
         sql = text(f"""
             SELECT 
                 c.account_officer as 'Officer Name', 
@@ -852,12 +1058,15 @@ def api_performance_export():
             JOIN customers c ON p.account_number = c.account_number
             WHERE DATE(p.date_of_payment) BETWEEN :start AND :end
             {otype_clause}
+            {vendor_clause}
             GROUP BY c.account_officer, c.business_unit, c.officer_type
-            ORDER BY 'Total Recovery' DESC
+            ORDER BY `Total Recovery` DESC
         """)
         
         params = {"start": start, "end": end}
         if otype != 'Both': params["otype"] = otype
+        if session['user']['role'] == 'Vendor':
+            params["vendor_name"] = session['user']['username']
 
         with engine.connect() as conn:
             df = pd.read_sql(sql, conn, params=params)
@@ -907,6 +1116,14 @@ def api_payments_preview():
     start_date = request.args.get('start')
     end_date = request.args.get('end')
     
+    if session['user']['role'] == 'Vendor':
+        otypes = ['Vendor']
+        onames = [session['user']['username']]
+        if not bus:
+            with engine.connect() as conn:
+                res = conn.execute(text("SELECT DISTINCT business_unit FROM customers WHERE account_officer = :v AND business_unit IS NOT NULL AND business_unit != ''"), {"v": session['user']['username']}).fetchall()
+                bus = [r[0] for r in res]
+                
     page = int(request.args.get('page', 1))
     per_page_arg = request.args.get('per_page', '50')
     
@@ -1026,6 +1243,14 @@ def api_payments_export():
     start_date = data.get('start')
     end_date = data.get('end')
     
+    if session['user']['role'] == 'Vendor':
+        otypes = ['Vendor']
+        onames = [session['user']['username']]
+        if not bus:
+            with engine.connect() as conn:
+                res = conn.execute(text("SELECT DISTINCT business_unit FROM customers WHERE account_officer = :v AND business_unit IS NOT NULL AND business_unit != ''"), {"v": session['user']['username']}).fetchall()
+                bus = [r[0] for r in res]
+                
     if not bus or not onames:
         return jsonify({"error": "Missing filters"}), 400
 
@@ -1101,6 +1326,14 @@ def api_customers_preview():
     bus = request.args.getlist('bu')
     otypes = request.args.getlist('type')
     onames = request.args.getlist('officer')
+    
+    if session['user']['role'] == 'Vendor':
+        otypes = ['Vendor']
+        onames = [session['user']['username']]
+        if not bus:
+            with engine.connect() as conn:
+                res = conn.execute(text("SELECT DISTINCT business_unit FROM customers WHERE account_officer = :v AND business_unit IS NOT NULL AND business_unit != ''"), {"v": session['user']['username']}).fetchall()
+                bus = [r[0] for r in res]
     
     page = int(request.args.get('page', 1))
     per_page_arg = request.args.get('per_page', '50')
@@ -1220,6 +1453,14 @@ def api_customers_export():
     bus = data.get('bu', [])
     otypes = data.get('type', [])
     onames = data.get('officer', [])
+    
+    if session['user']['role'] == 'Vendor':
+        otypes = ['Vendor']
+        onames = [session['user']['username']]
+        if not bus:
+            with engine.connect() as conn:
+                res = conn.execute(text("SELECT DISTINCT business_unit FROM customers WHERE account_officer = :v AND business_unit IS NOT NULL AND business_unit != ''"), {"v": session['user']['username']}).fetchall()
+                bus = [r[0] for r in res]
     
     if not bus or not onames:
         return jsonify({"error": "Missing filters"}), 400

@@ -5,364 +5,1059 @@
 
 {% block head %}
 <style>
-    .selection-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-        gap: 20px;
-        margin-bottom: 30px;
-    }
-
-    .form-group {
+    /* Premium Glassmorphic Workspace Stack */
+    .job-form-workspace {
         display: flex;
         flex-direction: column;
+        gap: 20px;
+        width: 100%;
+        margin-bottom: 40px;
+    }
+
+    /* 1. TOP LEVEL SCOPE SELECTOR CARD */
+    .scope-selector-card {
+        background: linear-gradient(135deg, rgba(224, 12, 126, 0.04) 0%, rgba(30, 41, 59, 0.7) 100%);
+        border: 1px solid var(--border-color);
+        border-left: 5px solid var(--primary-color);
+        border-radius: 12px;
+        padding: 20px 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+        backdrop-filter: blur(8px);
+        transition: all 0.3s ease;
+    }
+
+    .scope-info-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        max-width: 50%;
+    }
+
+    .scope-info-group h3 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--primary-color);
+        display: flex;
+        align-items: center;
         gap: 8px;
     }
 
-    .form-label {
+    .scope-info-group p {
+        margin: 0;
+        font-size: 12.5px;
+        color: var(--text-muted);
+        line-height: 1.4;
+    }
+
+    .scope-options {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+    }
+
+    .scope-option-card {
+        position: relative;
+        display: block;
+        cursor: pointer;
+        background: rgba(255, 255, 255, 0.01);
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        padding: 12px 20px;
+        min-width: 180px;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        user-select: none;
+    }
+
+    .scope-option-card input[type="checkbox"] {
+        display: none;
+    }
+
+    .scope-option-card:hover {
+        border-color: rgba(224, 12, 126, 0.4);
+        background: rgba(224, 12, 126, 0.02);
+        transform: translateY(-2px);
+    }
+
+    .scope-option-card.active {
+        border-color: var(--primary-color);
+        background: rgba(224, 12, 126, 0.08);
+        box-shadow: 0 0 15px rgba(224, 12, 126, 0.15);
+    }
+
+    .scope-option-card.active i {
+        color: var(--primary-color);
+        transform: scale(1.1);
+    }
+
+    .option-content {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .option-content i {
+        font-size: 20px;
+        color: var(--text-muted);
+        transition: all 0.25s ease;
+    }
+
+    .option-title {
+        display: block;
+        font-size: 13px;
         font-weight: 600;
-        font-size: 14px;
         color: var(--text-color);
     }
 
+    .option-desc {
+        display: block;
+        font-size: 10px;
+        color: var(--text-muted);
+    }
+
+    .scope-warning {
+        font-size: 11px;
+        color: var(--danger-color);
+        margin-top: 4px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    /* 2. THREE COLUMN MATRIX GRID */
+    .filters-matrix-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 20px;
+        width: 100%;
+        transition: all 0.3s ease;
+    }
+
+    .matrix-column {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    /* Accordion Custom Cards */
+    .accordion-step {
+        width: 100%;
+        background-color: var(--card-bg) !important;
+        border: 1px solid var(--border-color) !important;
+        border-radius: 12px !important;
+        overflow: hidden;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .accordion-step:hover {
+        border-color: rgba(224, 12, 126, 0.3) !important;
+        box-shadow: 0 6px 20px rgba(224, 12, 126, 0.03);
+    }
+
+    .accordion-step.active {
+        border-color: var(--primary-color) !important;
+        box-shadow: 0 8px 25px rgba(224, 12, 126, 0.12);
+        background-color: var(--card-bg) !important;
+    }
+
+    /* Locked overlay state */
+    .accordion-step.locked {
+        opacity: 0.35;
+        pointer-events: none;
+        user-select: none;
+        background-color: var(--bg-color) !important;
+        border-color: var(--border-color) !important;
+        box-shadow: none !important;
+    }
+
+    .accordion-step.locked .accordion-header {
+        cursor: not-allowed;
+    }
+
+    .accordion-step.locked .step-num-title {
+        color: var(--text-muted);
+    }
+
+    .accordion-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 20px;
+        cursor: pointer;
+        user-select: none;
+        background-color: transparent !important;
+        transition: all 0.2s ease;
+    }
+
+    .accordion-header:hover {
+        background-color: rgba(224, 12, 126, 0.03) !important;
+    }
+
+    .step-title-group {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        min-width: 0;
+        flex-grow: 1;
+    }
+
+    .step-num-title {
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--text-color);
+        transition: color 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .accordion-step.active .step-num-title {
+        color: var(--primary-color);
+    }
+
+    .step-summary {
+        font-size: 11px;
+        color: var(--text-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 250px;
+        padding-left: 20px;
+    }
+
+    .accordion-step.has-selection .step-summary {
+        color: var(--text-color);
+        font-weight: 500;
+    }
+
+    .step-icon-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+        margin-left: 8px;
+    }
+
+    .step-status-icon {
+        font-size: 12px;
+        color: var(--success-color);
+        display: none;
+        flex-shrink: 0;
+    }
+
+    .step-chevron {
+        font-size: 10px;
+        color: var(--text-muted);
+        transition: transform 0.2s ease;
+    }
+
+    .accordion-step.active .step-chevron {
+        transform: rotate(180deg);
+        color: var(--primary-color);
+    }
+
+    .accordion-content {
+        display: none;
+        padding: 0 20px 20px 20px;
+        flex-direction: column;
+        gap: 12px;
+        background-color: transparent !important;
+        border-top: 1px solid rgba(255, 255, 255, 0.02);
+        padding-top: 15px;
+    }
+
+    .accordion-step.active .accordion-content {
+        display: flex;
+    }
+
+    /* BOXLESS CHECKLISTS */
     .multi-select-container {
-        background-color: var(--card-bg);
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        height: 150px;
+        border: none !important;
+        background-color: transparent !important;
+        max-height: 180px;
+        height: auto;
         overflow-y: auto;
-        padding: 10px;
+        padding: 4px 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        box-shadow: none !important;
+    }
+
+    /* Scrollbar for checklist */
+    .multi-select-container::-webkit-scrollbar {
+        width: 4px;
+    }
+    .multi-select-container::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .multi-select-container::-webkit-scrollbar-thumb {
+        background-color: var(--border-color);
+        border-radius: 10px;
     }
 
     .select-item {
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: 5px 8px;
-        border-radius: 4px;
+        padding: 6px 10px;
+        border-radius: 6px;
         cursor: pointer;
-        font-size: 13px;
-        transition: background 0.2s;
+        font-size: 12px;
+        transition: all 0.15s ease;
+        border: none !important;
+        background: transparent !important;
     }
 
     .select-item:hover {
-        background-color: rgba(243, 44, 145, 0.05);
+        background-color: rgba(224, 12, 126, 0.06) !important;
+        color: var(--text-color);
     }
 
-    .select-item input {
+    .select-item input[type="checkbox"] {
         cursor: pointer;
+        accent-color: var(--primary-color);
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+        margin: 0;
     }
 
-    .form-control-web {
-        padding: 10px 15px;
-        border-radius: 8px;
-        border: 1px solid var(--border-color);
-        background-color: var(--card-bg);
-        color: var(--text-color);
-        font-family: inherit;
-        font-size: 14px;
-        outline: none;
-        transition: border-color 0.2s;
-    }
-
-    .form-control-web:focus {
-        border-color: var(--primary-color);
-    }
-
-    .preview-section {
-        margin-top: 40px;
-        border-top: 1px solid var(--border-color);
-        padding-top: 30px;
-    }
-
-    .table-container {
-        width: 100%;
-        overflow-x: auto;
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-    }
-
-    table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 13px;
-    }
-
-    th {
-        background-color: rgba(243, 44, 145, 0.1);
-        color: var(--primary-color);
-        text-align: left;
-        padding: 12px 15px;
-        font-weight: 600;
-        border: 1px solid var(--border-color);
+    .select-item span {
         white-space: nowrap;
-    }
-
-    td {
-        padding: 10px 15px;
-        border: 1px solid var(--border-color);
+        overflow: hidden;
+        text-overflow: ellipsis;
         color: var(--text-color);
     }
 
-    .btn-group {
+    /* Premium Pill Radio Selector for Job Form Type */
+    .job-form-type-selector {
         display: flex;
-        justify-content: space-between;
+        gap: 8px;
+        flex-direction: column;
+        padding: 4px 0;
+        width: 100%;
+    }
+
+    .pill-item {
+        display: flex;
         align-items: center;
-        margin-top: 30px;
+        padding: 10px 16px;
+        border: 1px solid var(--border-color);
+        background-color: var(--bg-color);
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        color: var(--text-muted);
+        transition: all 0.2s ease;
+        user-select: none;
+    }
+
+    .pill-item:hover {
+        border-color: rgba(224, 12, 126, 0.4);
+        color: var(--text-color);
+    }
+
+    .pill-item.active {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
+        color: white;
+        border-color: var(--primary-color);
+        box-shadow: 0 4px 12px rgba(224, 12, 126, 0.25);
+        font-weight: 600;
+    }
+
+    .pill-item input[type="radio"] {
+        display: none;
+    }
+
+    .search-input {
+        width: 100%;
+        padding: 6px 12px;
+        border-radius: 20px;
+        border: 1px solid var(--border-color);
+        background-color: rgba(255, 255, 255, 0.02);
+        color: var(--text-color);
+        font-size: 11px;
+        outline: none;
+        transition: border-color 0.2s, background-color 0.2s;
+    }
+
+    .search-input:focus {
+        border-color: var(--primary-color);
+        background-color: rgba(255, 255, 255, 0.04);
+    }
+
+    .select-all-container {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin-bottom: 6px;
+    }
+
+    .select-all-btn {
+        background: none;
+        border: 1px solid var(--border-color);
+        color: var(--text-muted);
+        font-size: 10px;
+        font-weight: 500;
+        cursor: pointer;
+        padding: 4px 10px;
+        border-radius: 20px;
+        transition: all 0.15s ease;
+    }
+
+    .select-all-btn:hover {
+        background-color: rgba(224, 12, 126, 0.08);
+        border-color: var(--primary-color);
+        color: var(--primary-color);
+    }
+
+    /* 3. ACTION BAR */
+    .action-bar {
+        display: flex;
+        gap: 16px;
+        width: 100%;
+        margin-bottom: 24px;
     }
 
     .btn-main {
-        padding: 12px 30px;
+        padding: 12px 24px;
         border-radius: 8px;
         font-weight: 600;
+        font-size: 13.5px;
         cursor: pointer;
-        transition: all 0.2s;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         border: none;
         display: flex;
         align-items: center;
-        gap: 10px;
+        justify-content: center;
+        gap: 8px;
+        flex: 1;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
     }
 
     .btn-primary-web {
-        background-color: var(--primary-color);
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
         color: white;
     }
 
     .btn-primary-web:hover {
-        background-color: var(--primary-hover);
         transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(224, 12, 126, 0.3);
     }
 
     .btn-danger-web {
         background-color: transparent;
         color: var(--danger-color);
         border: 1px solid var(--danger-color);
+        box-shadow: none;
     }
 
     .btn-danger-web:hover {
         background-color: var(--danger-color);
         color: white;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 15px rgba(239, 68, 68, 0.15);
     }
 
-    .stats-card {
-        background-color: rgba(243, 44, 145, 0.05);
-        padding: 15px 25px;
-        border-radius: 12px;
-        border: 1px solid rgba(243, 44, 145, 0.2);
+    .btn-main:active {
+        transform: translateY(0);
+    }
+
+    /* 4. PREVIEW AND TABLE STYLING */
+    .main-preview-panel {
+        width: 100%;
         display: flex;
-        align-items: center;
-        gap: 15px;
+        flex-direction: column;
+        gap: 20px;
     }
 
-    .stats-val {
-        font-size: 20px;
+    .stats-header-card {
+        background-color: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 18px 25px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+    }
+
+    .stats-header-card h2 {
+        margin: 0 0 4px 0;
+        font-size: 18px;
         font-weight: 700;
         color: var(--primary-color);
     }
 
-    .search-input {
-        width: 100%;
-        padding: 8px 12px;
-        border-radius: 6px;
-        border: 1px solid var(--border-color);
-        background-color: var(--bg-color);
-        color: var(--text-color);
-        margin-bottom: 10px;
-        font-size: 12px;
+    .stats-header-card p {
+        margin: 0;
+        font-size: 12.5px;
+        color: var(--text-muted);
     }
 
-    .select-all-container {
+    .stats-counter-badge {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: rgba(224, 12, 126, 0.05);
+        border: 1px solid rgba(224, 12, 126, 0.15);
+        padding: 10px 18px;
+        border-radius: 10px;
+    }
+
+    .stats-counter-badge i {
+        font-size: 20px;
+        color: var(--primary-color);
+    }
+
+    .stats-counter-badge span {
+        font-size: 9px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-muted);
+        display: block;
+    }
+
+    .stats-counter-badge strong {
+        font-size: 18px;
+        font-weight: 700;
+        color: var(--primary-color);
+    }
+
+    .preview-section {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        border-radius: 12px;
+        background-color: var(--card-bg);
+        border: 1px solid var(--border-color);
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+        padding: 24px;
+        margin-top: 0;
+    }
+
+    .preview-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 0 5px 8px;
+        margin-bottom: 20px;
         border-bottom: 1px solid var(--border-color);
-        margin-bottom: 8px;
+        padding-bottom: 15px;
     }
 
-    .select-all-btn {
-        background: none;
-        border: none;
+    .preview-title {
+        margin: 0;
+        font-size: 14.5px;
         color: var(--primary-color);
-        font-size: 11px;
-        font-weight: 600;
-        cursor: pointer;
-        padding: 2px 5px;
-        border-radius: 4px;
-        transition: background 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 700;
     }
 
-    .select-all-btn:hover {
-        background-color: rgba(243, 44, 145, 0.1);
+    .btn-download-preview {
+        background: linear-gradient(135deg, var(--success-color) 0%, #0d9488 100%);
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 12px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.25s ease;
+        box-shadow: 0 4px 12px rgba(20, 184, 166, 0.15);
+    }
+
+    .btn-download-preview:hover {
+        transform: translateY(-1.5px);
+        box-shadow: 0 6px 16px rgba(20, 184, 166, 0.3);
+    }
+
+    .btn-download-preview:active {
+        transform: translateY(0);
+    }
+
+    .table-container {
+        width: 100%;
+        overflow: auto;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background-color: rgba(30, 41, 59, 0.4);
+    }
+
+    /* Scrollbars for table container */
+    .table-container::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+    .table-container::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .table-container::-webkit-scrollbar-thumb {
+        background-color: var(--border-color);
+        border-radius: 3px;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+    }
+
+    th {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background-color: rgba(30, 41, 59, 0.95);
+        color: var(--primary-color);
+        text-align: left;
+        padding: 12px 14px;
+        font-weight: 600;
+        border: 1px solid var(--border-color);
+        white-space: nowrap;
+        box-shadow: 0 1px 0 var(--border-color);
+    }
+
+    td {
+        padding: 10px 14px;
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+        white-space: nowrap;
+    }
+
+    tr:hover {
+        background-color: rgba(255, 255, 255, 0.02);
+    }
+
+    .selected-count {
+        font-weight: 700;
+        color: white;
+        background: var(--primary-color);
+        padding: 1px 5px;
+        border-radius: 10px;
+        font-size: 9px;
+        margin-left: 4px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* Empty state progress tracker card styles */
+    .tracker-step {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 13.5px;
+        color: var(--text-muted);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        padding: 6px 0;
+    }
+
+    .tracker-step.completed {
+        color: var(--text-color);
+        font-weight: 500;
+        padding-left: 4px;
+    }
+
+    .tracker-step .step-dot {
+        font-size: 15px;
+        color: var(--border-color);
+        transition: all 0.3s ease;
+    }
+
+    @keyframes pulse-glow {
+        0% {
+            box-shadow: 0 0 0 0 rgba(224, 12, 126, 0.3);
+        }
+        70% {
+            box-shadow: 0 0 0 15px rgba(224, 12, 126, 0);
+        }
+        100% {
+            box-shadow: 0 0 0 0 rgba(224, 12, 126, 0);
+        }
+    }
+
+    /* Responsive media queries */
+    @media (max-width: 1200px) {
+        .filters-matrix-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @media (max-width: 768px) {
+        .scope-selector-card {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        .scope-info-group {
+            max-width: 100%;
+        }
+        .filters-matrix-grid {
+            grid-template-columns: 1fr;
+        }
+        .action-bar {
+            flex-direction: column;
+        }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px;">
-        <div>
-            <p style="color: var(--text-muted); margin: 0;">Configure filters to generate and download customized job forms.</p>
-        </div>
-        <div class="stats-card">
-            <i class="fas fa-database" style="color: var(--primary-color); font-size: 24px;"></i>
-            <div>
-                <div style="font-size: 12px; color: var(--text-muted); font-weight: 500;">Total Rows Found</div>
-                <div class="stats-val" id="totalRows">0</div>
+<div class="job-form-workspace">
+    <!-- Top Level Scope Selector Card -->
+    <div class="scope-selector-card" {% if session.get('user') and session['user']['role'] == 'Vendor' %}style="display: none;"{% endif %}>
+        <div class="scope-info-group">
+            <h3><i class="fas fa-filter"></i> Step 1: Select Officer Scope</h3>
+            <p>Define the focus of your job form creator. You must select at least one officer type below to unlock and populate the business unit and subsequent options.</p>
+            <div class="scope-warning" id="scopeWarning">
+                <i class="fas fa-exclamation-circle"></i> Please check at least one officer scope to start configuring.
             </div>
         </div>
-    </div>
-
-    <div class="selection-grid">
-        <!-- 1. Business Unit -->
-        <div class="form-group">
-            <label class="form-label">1. Business Unit:</label>
-            <div class="select-all-container">
-                <input type="text" class="search-input" style="margin-bottom: 0; flex-grow: 1; margin-right: 10px;" placeholder="Search BU..." onkeyup="filterItems(this, 'buList')">
-                <button class="select-all-btn" onclick="toggleSelectAll('buList', true)">All</button>
-                <button class="select-all-btn" onclick="toggleSelectAll('buList', false)">None</button>
-            </div>
-            <div class="multi-select-container" id="buList">
-                <!-- Populated via JS -->
-            </div>
-        </div>
-
-        <!-- 2. Officer Type -->
-        <div class="form-group">
-            <label class="form-label">2. Officer Type:</label>
-            <div class="select-all-container" style="justify-content: flex-end;">
-                <button class="select-all-btn" onclick="toggleSelectAll('typeList', true)">All</button>
-                <button class="select-all-btn" onclick="toggleSelectAll('typeList', false)">None</button>
-            </div>
-            <div class="multi-select-container" id="typeList">
-                <div class="select-item">
-                    <input type="checkbox" value="DMO" onchange="updateOfficers()">
-                    <span>DMO</span>
+        
+        <div class="scope-options">
+            <label class="scope-option-card" id="labelDMO">
+                <input type="checkbox" id="scopeDMO" onchange="handleScopeChange()">
+                <div class="option-content">
+                    <i class="fas fa-user-tie"></i>
+                    <div>
+                        <span class="option-title">DMO Staff</span>
+                        <span class="option-desc">Debt Management Officers</span>
+                    </div>
                 </div>
-                <div class="select-item">
-                    <input type="checkbox" value="Vendor" onchange="updateOfficers()">
-                    <span>Vendor</span>
+            </label>
+            <label class="scope-option-card" id="labelVendor">
+                <input type="checkbox" id="scopeVendor" onchange="handleScopeChange()">
+                <div class="option-content">
+                    <i class="fas fa-users-cog"></i>
+                    <div>
+                        <span class="option-title">Vendor Staff</span>
+                        <span class="option-desc">External Collections Agents</span>
+                    </div>
+                </div>
+            </label>
+        </div>
+    </div>
+
+    <!-- 3-Column Matrix Grid for remaining 7 filters -->
+    <div class="filters-matrix-grid" id="filtersGrid">
+        <!-- COLUMN 1: BU, Feeder, Columns Config -->
+        <div class="matrix-column">
+            <!-- Business Unit Card -->
+            <div class="accordion-step locked" id="step1">
+                <div class="accordion-header" onclick="toggleStep('step1')">
+                    <div class="step-title-group">
+                        <div class="step-num-title">
+                            <i class="fas fa-check-circle step-status-icon"></i>
+                            <span>Business Unit</span>
+                        </div>
+                        <span class="step-summary" id="buSelectedText">Select Business Unit</span>
+                    </div>
+                    <div class="step-icon-group">
+                        <i class="fas fa-chevron-down step-chevron"></i>
+                    </div>
+                </div>
+                <div class="accordion-content">
+                    <div class="select-all-container">
+                        <input type="text" class="search-input" placeholder="Search BU..." onkeyup="filterItems(this, 'buList')">
+                        <button class="select-all-btn" onclick="toggleSelectAll('buList', true)">All</button>
+                        <button class="select-all-btn" onclick="toggleSelectAll('buList', false)">None</button>
+                    </div>
+                    <div class="multi-select-container" id="buList">
+                        <!-- Populated via JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Feeders Card -->
+            <div class="accordion-step locked" id="step5">
+                <div class="accordion-header" onclick="toggleStep('step5')">
+                    <div class="step-title-group">
+                        <div class="step-num-title">
+                            <i class="fas fa-check-circle step-status-icon"></i>
+                            <span>Select Feeders</span>
+                        </div>
+                        <span class="step-summary" id="feederSelectedText">Select Feeders</span>
+                    </div>
+                    <div class="step-icon-group">
+                        <i class="fas fa-chevron-down step-chevron"></i>
+                    </div>
+                </div>
+                <div class="accordion-content">
+                    <div class="select-all-container">
+                        <input type="text" class="search-input" placeholder="Search Feeder..." onkeyup="filterItems(this, 'feederList')">
+                        <button class="select-all-btn" onclick="toggleSelectAll('feederList', true)">All</button>
+                        <button class="select-all-btn" onclick="toggleSelectAll('feederList', false)">None</button>
+                    </div>
+                    <div class="multi-select-container" id="feederList">
+                        <div style="color: var(--text-muted); font-size: 11px; text-align: center; padding: 20px 0;">Select Officer first</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Columns Config Card -->
+            <div class="accordion-step locked" id="step7">
+                <div class="accordion-header" onclick="toggleStep('step7')">
+                    <div class="step-title-group">
+                        <div class="step-num-title">
+                            <i class="fas fa-check-circle step-status-icon"></i>
+                            <span>Columns Configuration</span>
+                        </div>
+                        <span class="step-summary" id="columnSelectedText">Columns Configuration</span>
+                    </div>
+                    <div class="step-icon-group">
+                        <i class="fas fa-chevron-down step-chevron"></i>
+                    </div>
+                </div>
+                <div class="accordion-content">
+                    <div class="select-all-container">
+                        <button class="select-all-btn" onclick="toggleSelectAll('columnList', true)">All</button>
+                        <button class="select-all-btn" onclick="toggleSelectAll('columnList', false)">None</button>
+                    </div>
+                    <div class="multi-select-container" id="columnList">
+                        <!-- Populated via JS -->
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- 3. Officer Name -->
-        <div class="form-group">
-            <label class="form-label">3. Officer Name:</label>
-            <div class="select-all-container">
-                <input type="text" class="search-input" style="margin-bottom: 0; flex-grow: 1; margin-right: 10px;" placeholder="Search Officer..." onkeyup="filterItems(this, 'officerList')">
-                <button class="select-all-btn" onclick="toggleSelectAll('officerList', true)">All</button>
-                <button class="select-all-btn" onclick="toggleSelectAll('officerList', false)">None</button>
+        <!-- COLUMN 2: Undertaking, DT Names -->
+        <div class="matrix-column">
+            <!-- Undertaking Card -->
+            <div class="accordion-step locked" id="step2">
+                <div class="accordion-header" onclick="toggleStep('step2')">
+                    <div class="step-title-group">
+                        <div class="step-num-title">
+                            <i class="fas fa-check-circle step-status-icon"></i>
+                            <span>Undertaking</span>
+                        </div>
+                        <span class="step-summary" id="undertakingSelectedText">Select Undertaking</span>
+                    </div>
+                    <div class="step-icon-group">
+                        <i class="fas fa-chevron-down step-chevron"></i>
+                    </div>
+                </div>
+                <div class="accordion-content">
+                    <div class="select-all-container">
+                        <input type="text" class="search-input" placeholder="Search Undertaking..." onkeyup="filterItems(this, 'undertakingList')">
+                        <button class="select-all-btn" onclick="toggleSelectAll('undertakingList', true)">All</button>
+                        <button class="select-all-btn" onclick="toggleSelectAll('undertakingList', false)">None</button>
+                    </div>
+                    <div class="multi-select-container" id="undertakingList">
+                        <div style="color: var(--text-muted); font-size: 11px; text-align: center; padding: 20px 0;">Select BU first</div>
+                    </div>
+                </div>
             </div>
-            <div class="multi-select-container" id="officerList">
-                <div style="color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 40px;">Select BU & Type first</div>
+
+            <!-- DT Names Card -->
+            <div class="accordion-step locked" id="step6">
+                <div class="accordion-header" onclick="toggleStep('step6')">
+                    <div class="step-title-group">
+                        <div class="step-num-title">
+                            <i class="fas fa-check-circle step-status-icon"></i>
+                            <span>Select DT Names</span>
+                        </div>
+                        <span class="step-summary" id="dtSelectedText">Select DT Names</span>
+                    </div>
+                    <div class="step-icon-group">
+                        <i class="fas fa-chevron-down step-chevron"></i>
+                    </div>
+                </div>
+                <div class="accordion-content">
+                    <div class="select-all-container">
+                        <input type="text" class="search-input" placeholder="Search DT..." onkeyup="filterItems(this, 'dtList')">
+                        <button class="select-all-btn" onclick="toggleSelectAll('dtList', true)">All</button>
+                        <button class="select-all-btn" onclick="toggleSelectAll('dtList', false)">None</button>
+                    </div>
+                    <div class="multi-select-container" id="dtList">
+                        <div style="color: var(--text-muted); font-size: 11px; text-align: center; padding: 20px 0;">Select Feeder first</div>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- 4. Job Form Type -->
-        <div class="form-group">
-            <label class="form-label">4. Job Form Type:</label>
-            <select class="form-control-web" id="formType" onchange="updatePreview(true)">
-                <option value="Full">Full</option>
-                <option value="Defaulted payment Plan">Defaulted payment Plan</option>
-                <option value="Exclude Payment Plan">Exclude Payment Plan</option>
-            </select>
-        </div>
+        <!-- COLUMN 3: Officer Name, Form Type -->
+        <div class="matrix-column">
+            <!-- Officer Name Card -->
+            <div class="accordion-step locked" id="step4">
+                <div class="accordion-header" onclick="toggleStep('step4')">
+                    <div class="step-title-group">
+                        <div class="step-num-title">
+                            <i class="fas fa-check-circle step-status-icon"></i>
+                            <span>Officer Name</span>
+                        </div>
+                        <span class="step-summary" id="officerSelectedText">Select Officer</span>
+                    </div>
+                    <div class="step-icon-group">
+                        <i class="fas fa-chevron-down step-chevron"></i>
+                    </div>
+                </div>
+                <div class="accordion-content">
+                    <div class="select-all-container">
+                        <input type="text" class="search-input" placeholder="Search Officer..." onkeyup="filterItems(this, 'officerList')">
+                        <button class="select-all-btn" onclick="toggleSelectAll('officerList', true)">All</button>
+                        <button class="select-all-btn" onclick="toggleSelectAll('officerList', false)">None</button>
+                    </div>
+                    <div class="multi-select-container" id="officerList">
+                        <div style="color: var(--text-muted); font-size: 11px; text-align: center; padding: 20px 0;">Select BU & Type first</div>
+                    </div>
+                </div>
+            </div>
 
-        <!-- 5. Feeders -->
-        <div class="form-group">
-            <label class="form-label">5. Select Feeders:</label>
-            <div class="select-all-container">
-                <input type="text" class="search-input" style="margin-bottom: 0; flex-grow: 1; margin-right: 10px;" placeholder="Search Feeder..." onkeyup="filterItems(this, 'feederList')">
-                <button class="select-all-btn" onclick="toggleSelectAll('feederList', true)">All</button>
-                <button class="select-all-btn" onclick="toggleSelectAll('feederList', false)">None</button>
-            </div>
-            <div class="multi-select-container" id="feederList">
-                <div style="color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 40px;">Select Officer first</div>
-            </div>
-        </div>
-
-        <!-- 6. DT Names -->
-        <div class="form-group">
-            <label class="form-label">6. Select DT Names:</label>
-            <div class="select-all-container">
-                <input type="text" class="search-input" style="margin-bottom: 0; flex-grow: 1; margin-right: 10px;" placeholder="Search DT..." onkeyup="filterItems(this, 'dtList')">
-                <button class="select-all-btn" onclick="toggleSelectAll('dtList', true)">All</button>
-                <button class="select-all-btn" onclick="toggleSelectAll('dtList', false)">None</button>
-            </div>
-            <div class="multi-select-container" id="dtList">
-                <div style="color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 40px;">Select Feeder first</div>
+            <!-- Job Form Type Card -->
+            <div class="accordion-step locked" id="step3">
+                <div class="accordion-header" onclick="toggleStep('step3')">
+                    <div class="step-title-group">
+                        <div class="step-num-title">
+                            <i class="fas fa-check-circle step-status-icon" style="display: inline-block;"></i>
+                            <span>Job Form Type</span>
+                        </div>
+                        <span class="step-summary" id="formTypeSelectedText">Full</span>
+                    </div>
+                    <div class="step-icon-group">
+                        <i class="fas fa-chevron-down step-chevron"></i>
+                    </div>
+                </div>
+                <div class="accordion-content">
+                    <div class="job-form-type-selector">
+                        <label class="pill-item active">
+                            <input type="radio" name="form_type" value="Full" checked onchange="handleFormTypeChange(this)">
+                            <span>Full</span>
+                        </label>
+                        <label class="pill-item">
+                            <input type="radio" name="form_type" value="Defaulted payment Plan" onchange="handleFormTypeChange(this)">
+                            <span>Defaulted Plan</span>
+                        </label>
+                        <label class="pill-item">
+                            <input type="radio" name="form_type" value="Exclude Payment Plan" onchange="handleFormTypeChange(this)">
+                            <span>Exclude Plan</span>
+                        </label>
+                    </div>
+                    <!-- Hidden select input to support existing select queries -->
+                    <select class="form-control-web" id="formType" style="display: none;">
+                        <option value="Full">Full</option>
+                        <option value="Defaulted payment Plan">Defaulted payment Plan</option>
+                        <option value="Exclude Payment Plan">Exclude Payment Plan</option>
+                    </select>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- 7. Output Columns -->
-    <div class="form-group" style="margin-bottom: 30px;">
-        <label class="form-label">7. Output Columns:</label>
-        <div class="select-all-container" style="justify-content: flex-end;">
-            <button class="select-all-btn" onclick="toggleSelectAll('columnList', true)">All</button>
-            <button class="select-all-btn" onclick="toggleSelectAll('columnList', false)">None</button>
-        </div>
-        <div class="multi-select-container" id="columnList" style="height: 100px; display: flex; flex-wrap: wrap; gap: 10px;">
-            <!-- Populated via JS -->
-        </div>
-    </div>
-
-    <div class="btn-group">
-        <button class="btn-main btn-danger-web" onclick="resetFilters()">
-            <i class="fas fa-undo"></i>
-            Reset Filters
+    <!-- Centralized Action Bar -->
+    <div class="action-bar">
+        <button class="btn-main btn-primary-web" onclick="generatePreviewAndCount()">
+            <i class="fas fa-magic"></i> Generate Preview & Count
         </button>
-        <div style="display: flex; gap: 15px;">
-            <button class="btn-main btn-primary-web" style="background-color: var(--primary-color);" onclick="checkRowsCount()">
-                <i class="fas fa-calculator"></i>
-                Check Rows
-            </button>
-            <button class="btn-main btn-primary-web" style="background-color: var(--success-color);" onclick="downloadJobForm()">
-                <i class="fas fa-download"></i>
-                Download Job Form (.xlsx)
-            </button>
+        <button class="btn-main btn-danger-web" onclick="resetFilters()">
+            <i class="fas fa-undo"></i> Reset Filters
+        </button>
+    </div>
+
+    <!-- Lower Content Area (Preview & Interactive onboarding Checklist) -->
+    <div class="main-preview-panel">
+        <!-- Live Counter Info bar -->
+        <div class="stats-header-card">
+            <div>
+                <h2>📊 Query Live Statistics</h2>
+                <p>Verify current filter scope constraints before exporting report file bytes.</p>
+            </div>
+            <div class="stats-counter-badge">
+                <i class="fas fa-database"></i>
+                <div>
+                    <span>Total Rows Found</span>
+                    <strong id="totalRows">0</strong>
+                </div>
+            </div>
+        </div>
+
+        <!-- Interactive Setup Checklist Welcome Dashboard -->
+        <div class="card preview-section" id="emptyStateContainer" style="padding: 40px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; min-height: 380px;">
+            <div class="empty-state-icon" style="width: 80px; height: 80px; border-radius: 50%; background: rgba(224, 12, 126, 0.05); border: 2px dashed var(--primary-color); display: flex; align-items: center; justify-content: center; font-size: 30px; color: var(--primary-color); animation: pulse-glow 2s infinite;">
+                <i class="fas fa-chart-line"></i>
+            </div>
+            <div style="max-width: 480px;">
+                <h3 style="margin: 0 0 10px 0; font-size: 18px; color: var(--text-color); font-weight: 700;">Complete Setup Checklist</h3>
+                <p style="margin: 0 0 25px 0; font-size: 13px; color: var(--text-muted); line-height: 1.6;">Build your data view using the 3-column filters above. The dashboard checklist below guides you to a valid query structure in real time.</p>
+            </div>
+            <div class="progress-tracker-card" style="width: 100%; max-width: 400px; background: rgba(255,255,255,0.01); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; text-align: left;">
+                <h4 style="margin: 0 0 15px 0; font-size: 12px; color: var(--primary-color); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Setup Checklist</h4>
+                <div class="tracker-steps" style="display: flex; flex-direction: column; gap: 12px;">
+                    <div class="tracker-step" id="track0">
+                        <i class="far fa-circle step-dot"></i> <span>Select Officer Scope</span>
+                    </div>
+                    <div class="tracker-step" id="track1">
+                        <i class="far fa-circle step-dot"></i> <span>Select Business Unit</span>
+                    </div>
+                    <div class="tracker-step" id="track2">
+                        <i class="far fa-circle step-dot"></i> <span>Choose Undertakings</span>
+                    </div>
+                    <div class="tracker-step" id="track3">
+                        <i class="far fa-circle step-dot"></i> <span>Define Officers & Feeders</span>
+                    </div>
+                    <div class="tracker-step" id="track4">
+                        <i class="far fa-circle step-dot"></i> <span>Configure Output Columns</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Preview Section Container -->
+        <div class="preview-section" id="previewContainer" style="display: none;">
+            <div class="preview-header">
+                <h3 class="preview-title">
+                    <i class="fas fa-eye"></i> Live Data Preview
+                </h3>
+                <button class="btn-download-preview" onclick="downloadJobForm()">
+                    <i class="fas fa-file-excel"></i> Download Report (.xlsx)
+                </button>
+            </div>
+
+            <!-- Pagination bar -->
+            <div class="pagination-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; background: var(--card-bg); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); flex-shrink: 0;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 11px; color: var(--text-muted);">Show</span>
+                    <select id="perPageSelect" class="form-control-web" style="padding: 4px 8px; font-size: 11px; border-radius: 6px; width: auto; background-color: var(--bg-color); border: 1px solid var(--border-color); color: var(--text-color); cursor: pointer;" onchange="changePerPage()">
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                        <option value="200">200</option>
+                        <option value="500">500</option>
+                        <option value="all">All</option>
+                    </select>
+                    <span style="font-size: 11px; color: var(--text-muted);">records per page</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <button class="select-all-btn" id="prevPageBtn" onclick="changePage(-1)" style="font-size: 11px; font-weight: 600;"><i class="fas fa-chevron-left"></i> Prev</button>
+                    <span style="font-size: 11px; font-weight: 600; color: var(--text-color);" id="pageNumberText">Page 1 of 1</span>
+                    <button class="select-all-btn" id="nextPageBtn" onclick="changePage(1)" style="font-size: 11px; font-weight: 600;">Next <i class="fas fa-chevron-right"></i></button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table id="previewTable">
+                    <thead>
+                        <tr id="tableHeader"></tr>
+                    </thead>
+                    <tbody id="tableBody"></tbody>
+                    <tfoot>
+                        <tr id="tableFooter" style="background: rgba(224, 12, 126, 0.05); font-weight: bold; border-top: 2px solid var(--border-color);"></tr>
+                    </tfoot>
+                </table>
+            </div>
         </div>
     </div>
 </div>
-
-<div class="card preview-section" id="previewContainer" style="display: none;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <h3 style="margin: 0; font-size: 18px; color: var(--primary-color);">👁️ Data Preview</h3>
-    </div>
-
-    <!-- Pagination bar -->
-    <div class="pagination-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; background: var(--card-bg); padding: 10px 15px; border-radius: 8px; border: 1px solid var(--border-color);">
-        <div style="display: flex; align-items: center; gap: 10px;">
-            <span style="font-size: 13px; color: var(--text-muted);">Show</span>
-            <select id="perPageSelect" class="form-control-web" style="padding: 4px 8px; font-size: 13px; border-radius: 6px; width: auto;" onchange="changePerPage()">
-                <option value="50">50</option>
-                <option value="100">100</option>
-                <option value="200">200</option>
-                <option value="500">500</option>
-                <option value="all">All</option>
-            </select>
-            <span style="font-size: 13px; color: var(--text-muted);">records per page</span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 15px;">
-            <button class="select-all-btn" id="prevPageBtn" onclick="changePage(-1)" style="font-size: 13px; font-weight: 600;"><i class="fas fa-chevron-left"></i> Prev</button>
-            <span style="font-size: 13px; font-weight: 600; color: var(--text-color);" id="pageNumberText">Page 1 of 1</span>
-            <button class="select-all-btn" id="nextPageBtn" onclick="changePage(1)" style="font-size: 13px; font-weight: 600;">Next <i class="fas fa-chevron-right"></i></button>
-        </div>
-    </div>
-
-    <div class="table-container">
-        <table id="previewTable">
-            <thead>
-                <tr id="tableHeader"></tr>
-            </thead>
-            <tbody id="tableBody"></tbody>
-            <tfoot>
-                <tr id="tableFooter" style="background: rgba(243, 44, 145, 0.05); font-weight: bold; border-top: 2px solid var(--border-color);"></tr>
-            </tfoot>
-        </table>
-    </div>
-</div>
-
 {% endblock %}
 
 {% block scripts %}
@@ -379,9 +1074,125 @@
     ];
 
     document.addEventListener('DOMContentLoaded', () => {
+        {% if session.get('user') and session['user']['role'] == 'Vendor' %}
+        document.getElementById('scopeVendor').checked = true;
+        document.getElementById('scopeDMO').checked = false;
+        document.getElementById('labelVendor').classList.add('active');
+        document.getElementById('labelDMO').classList.remove('active');
+        {% endif %}
         loadInitialData();
         setupColumns();
     });
+
+    // Guided Accordion Step Manager (per column focus)
+    function toggleStep(stepId) {
+        const step = document.getElementById(stepId);
+        if (step.classList.contains('locked')) return;
+        const isActive = step.classList.contains('active');
+        
+        // Find the parent column of this step
+        const col = step.closest('.matrix-column');
+        if (col) {
+            // Collapse only steps inside the same column
+            col.querySelectorAll('.accordion-step').forEach(s => {
+                s.classList.remove('active');
+            });
+        }
+        
+        // Expand this step if it wasn't already active
+        if (!isActive) {
+            step.classList.add('active');
+        }
+    }
+
+    // Custom Job Form Type pill change handler
+    function handleFormTypeChange(radioInput) {
+        const select = document.getElementById('formType');
+        select.value = radioInput.value;
+        
+        const selector = radioInput.closest('.job-form-type-selector');
+        const pills = selector.querySelectorAll('.pill-item');
+        pills.forEach(p => p.classList.remove('active'));
+        radioInput.closest('.pill-item').classList.add('active');
+        
+        const summary = document.getElementById('formTypeSelectedText');
+        if (summary) {
+            summary.innerText = radioInput.parentElement.querySelector('span').innerText;
+        }
+        
+        // Locked status updates
+        updateTracker();
+    }
+
+    // Setup checklist progress tracker
+    function updateTracker() {
+        const dmoChecked = document.getElementById('scopeDMO').checked;
+        const vendorChecked = document.getElementById('scopeVendor').checked;
+        const scopeActive = dmoChecked || vendorChecked;
+
+        const bus = getSelected('buList');
+        const undertakings = getSelected('undertakingList');
+        const officers = getSelected('officerList');
+        const columns = getSelected('columnList');
+
+        const toggle = (id, condition) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const icon = el.querySelector('i');
+            if (condition) {
+                el.classList.add('completed');
+                if (icon) {
+                    icon.className = 'fas fa-check-circle step-dot';
+                    icon.style.color = 'var(--success-color)';
+                }
+            } else {
+                el.classList.remove('completed');
+                if (icon) {
+                    icon.className = 'far fa-circle step-dot';
+                    icon.style.color = 'var(--border-color)';
+                }
+            }
+        };
+
+        toggle('track0', scopeActive);
+        toggle('track1', bus.length > 0);
+        toggle('track2', undertakings.length > 0);
+        toggle('track3', officers.length > 0);
+        toggle('track4', columns.length > 0);
+    }
+
+    // Dynamic Step summary badges and completion checkmarks
+    function updateSelectedText(listId, triggerTextId, defaultText) {
+        const selected = getSelected(listId);
+        const textSpan = document.getElementById(triggerTextId);
+        if (!textSpan) return;
+        
+        if (selected.length === 0) {
+            textSpan.innerHTML = defaultText;
+        } else if (selected.length === 1) {
+            textSpan.innerHTML = `${selected[0]}`;
+        } else {
+            const displayList = selected.slice(0, 2).join(', ');
+            const suffix = selected.length > 2 ? '...' : '';
+            textSpan.innerHTML = `${displayList}${suffix} <span class="selected-count">${selected.length}</span>`;
+        }
+
+        // Accordion success checkmarks and status indicators
+        const step = textSpan.closest('.accordion-step');
+        if (step) {
+            const checkIcon = step.querySelector('.step-status-icon');
+            if (selected.length > 0) {
+                step.classList.add('has-selection');
+                if (checkIcon) checkIcon.style.display = 'inline-block';
+            } else {
+                step.classList.remove('has-selection');
+                if (checkIcon) checkIcon.style.display = 'none';
+            }
+        }
+
+        // Live onboarding progress tracker
+        updateTracker();
+    }
 
     async function loadInitialData() {
         const response = await fetch('/api/job-form/initial-data');
@@ -390,17 +1201,33 @@
         const buList = document.getElementById('buList');
         buList.innerHTML = data.business_units.map(bu => `
             <div class="select-item">
-                <input type="checkbox" value="${bu}" onchange="updateOfficers()">
+                <input type="checkbox" value="${bu}" onchange="updateUndertakings()" ${data.business_units.length === 1 ? 'checked' : ''}>
                 <span>${bu}</span>
             </div>
         `).join('');
+
+        updateSelectedText('buList', 'buSelectedText', 'Select Business Unit');
+        updateSelectedText('undertakingList', 'undertakingSelectedText', 'Select Undertaking');
+        updateSelectedText('officerList', 'officerSelectedText', 'Select Officer');
+        updateSelectedText('feederList', 'feederSelectedText', 'Select Feeders');
+        updateSelectedText('dtList', 'dtSelectedText', 'Select DT Names');
+        updateSelectedText('columnList', 'columnSelectedText', 'Columns Configuration');
+
+        // Initial lock state application
+        updateLockStates();
+        updateTracker();
+        
+        // If there's only 1 Business Unit, trigger cascading updates immediately
+        if (data.business_units.length === 1) {
+            updateUndertakings();
+        }
     }
 
     function setupColumns() {
         const columnList = document.getElementById('columnList');
         columnList.innerHTML = defaultCols.map(col => `
-            <div class="select-item" style="border: 1px solid var(--border-color); background: var(--bg-color);">
-                <input type="checkbox" value="${col}" checked>
+            <div class="select-item">
+                <input type="checkbox" value="${col}" checked onchange="updateSelectedText('columnList', 'columnSelectedText', 'Columns Configuration')">
                 <span>${col.replace(/_/g, ' ')}</span>
             </div>
         `).join('');
@@ -410,18 +1237,155 @@
         return Array.from(document.querySelectorAll(`#${id} input:checked`)).map(cb => cb.value);
     }
 
+    // Top Level Checkbox card state and matrix unlock flow
+    function handleScopeChange() {
+        const scopeDMO = document.getElementById('scopeDMO');
+        const scopeVendor = document.getElementById('scopeVendor');
+        
+        // Active visual styling on parent cards
+        if (scopeDMO.checked) {
+            document.getElementById('labelDMO').classList.add('active');
+        } else {
+            document.getElementById('labelDMO').classList.remove('active');
+        }
+        
+        if (scopeVendor.checked) {
+            document.getElementById('labelVendor').classList.add('active');
+        } else {
+            document.getElementById('labelVendor').classList.remove('active');
+        }
+
+        updateLockStates();
+        updateOfficers();
+    }
+
+    // Dynamic lock status cascade manager
+    function updateLockStates() {
+        const dmoChecked = document.getElementById('scopeDMO').checked;
+        const vendorChecked = document.getElementById('scopeVendor').checked;
+        const scopeActive = dmoChecked || vendorChecked;
+        
+        const bus = getSelected('buList');
+        const undertakings = getSelected('undertakingList');
+        const officers = getSelected('officerList');
+        const feeders = getSelected('feederList');
+
+        // Top level locks
+        if (!scopeActive) {
+            document.getElementById('scopeWarning').style.display = 'flex';
+            // Lock all matrix steps
+            for (let i = 1; i <= 7; i++) {
+                const step = document.getElementById(`step${i}`);
+                if (step) {
+                    step.classList.add('locked');
+                    step.classList.remove('active');
+                }
+            }
+            updateTracker();
+            return;
+        }
+
+        document.getElementById('scopeWarning').style.display = 'none';
+
+        // Unlock Step 1 (BU), Step 3 (Type), Step 7 (Columns) immediately
+        document.getElementById('step1').classList.remove('locked');
+        document.getElementById('step3').classList.remove('locked');
+        document.getElementById('step7').classList.remove('locked');
+
+        // Automatically expand Step 1 if nothing is active yet in the column
+        if (!document.querySelector('.matrix-column:nth-child(1) .accordion-step.active')) {
+            document.getElementById('step1').classList.add('active');
+        }
+
+        // BU Selected -> Unlock Undertaking & Officer Name (Step 2 & 4)
+        if (bus.length > 0) {
+            document.getElementById('step2').classList.remove('locked');
+            document.getElementById('step4').classList.remove('locked');
+        } else {
+            document.getElementById('step2').classList.add('locked');
+            document.getElementById('step2').classList.remove('active');
+            document.getElementById('step4').classList.add('locked');
+            document.getElementById('step4').classList.remove('active');
+        }
+
+        // Officer Selected -> Unlock Feeders (Step 5)
+        if (officers.length > 0) {
+            document.getElementById('step5').classList.remove('locked');
+        } else {
+            document.getElementById('step5').classList.add('locked');
+            document.getElementById('step5').classList.remove('active');
+        }
+
+        // Feeder Selected -> Unlock DT Names (Step 6)
+        if (feeders.length > 0) {
+            document.getElementById('step6').classList.remove('locked');
+        } else {
+            document.getElementById('step6').classList.add('locked');
+            document.getElementById('step6').classList.remove('active');
+        }
+
+        updateTracker();
+    }
+
+    async function updateUndertakings() {
+        const bus = getSelected('buList');
+        updateSelectedText('buList', 'buSelectedText', 'Select Business Unit');
+        
+        if (bus.length === 0) {
+            document.getElementById('undertakingList').innerHTML = '<div style="color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 40px;">Select BU first</div>';
+            updateSelectedText('undertakingList', 'undertakingSelectedText', 'Select Undertaking');
+            updateLockStates();
+            updateOfficers();
+            return;
+        }
+
+        const query = new URLSearchParams();
+        bus.forEach(b => query.append('bu', b));
+
+        const response = await fetch(`/api/job-form/undertakings?${query.toString()}`);
+        const undertakings = await response.json();
+        
+        const undertakingList = document.getElementById('undertakingList');
+        undertakingList.innerHTML = undertakings.map(un => `
+            <div class="select-item">
+                <input type="checkbox" value="${un}" onchange="updateOfficers()" ${undertakings.length === 1 ? 'checked' : ''}>
+                <span>${un}</span>
+            </div>
+        `).join('');
+        
+        updateSelectedText('undertakingList', 'undertakingSelectedText', 'Select Undertaking');
+        updateLockStates();
+        updateOfficers();
+        
+        // If there is only 1 undertaking, trigger cascading updates
+        if (undertakings.length === 1) {
+            updateOfficers();
+        }
+    }
+
     async function updateOfficers() {
         const bus = getSelected('buList');
-        const types = getSelected('typeList');
+        const undertakings = getSelected('undertakingList');
         
-        if (bus.length === 0 || types.length === 0) {
+        // Grab Officer Type checkboxes from Top Card instead
+        const types = [];
+        if (document.getElementById('scopeDMO').checked) types.push('DMO');
+        if (document.getElementById('scopeVendor').checked) types.push('Vendor');
+        
+        const scopeActive = types.length > 0;
+        
+        if (bus.length === 0 || !scopeActive) {
             document.getElementById('officerList').innerHTML = '<div style="color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 40px;">Select BU & Type first</div>';
+            updateSelectedText('officerList', 'officerSelectedText', 'Select Officer');
+            updateLockStates();
+            updateFeeders();
             return;
         }
 
         const query = new URLSearchParams();
         bus.forEach(b => query.append('bu', b));
         types.forEach(t => query.append('type', t));
+        undertakings.forEach(u => query.append('undertaking', u));
 
         const response = await fetch(`/api/job-form/officers?${query.toString()}`);
         const names = await response.json();
@@ -429,24 +1393,40 @@
         const officerList = document.getElementById('officerList');
         officerList.innerHTML = names.map(name => `
             <div class="select-item">
-                <input type="checkbox" value="${name}" onchange="updateFeeders()">
+                <input type="checkbox" value="${name}" onchange="updateFeeders()" ${names.length === 1 ? 'checked' : ''}>
                 <span>${name}</span>
             </div>
         `).join('');
+        
+        updateSelectedText('officerList', 'officerSelectedText', 'Select Officer');
+        updateLockStates();
+        updateFeeders();
+        
+        // If there is only 1 officer, trigger cascading updates
+        if (names.length === 1) {
+            updateFeeders();
+        }
     }
 
     async function updateFeeders() {
         const bus = getSelected('buList');
+        const undertakings = getSelected('undertakingList');
         const names = getSelected('officerList');
+        
+        updateSelectedText('officerList', 'officerSelectedText', 'Select Officer');
         
         if (names.length === 0) {
             document.getElementById('feederList').innerHTML = '<div style="color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 40px;">Select Officer first</div>';
+            updateSelectedText('feederList', 'feederSelectedText', 'Select Feeders');
+            updateLockStates();
+            updateDTs();
             return;
         }
 
         const query = new URLSearchParams();
         bus.forEach(b => query.append('bu', b));
         names.forEach(n => query.append('name', n));
+        undertakings.forEach(u => query.append('undertaking', u));
 
         const response = await fetch(`/api/job-form/feeders?${query.toString()}`);
         const feeders = await response.json();
@@ -454,19 +1434,33 @@
         const feederList = document.getElementById('feederList');
         feederList.innerHTML = feeders.map(f => `
             <div class="select-item">
-                <input type="checkbox" value="${f}" onchange="updateDTs()">
+                <input type="checkbox" value="${f}" onchange="updateDTs()" ${feeders.length === 1 ? 'checked' : ''}>
                 <span>${f}</span>
             </div>
         `).join('');
+        
+        updateSelectedText('feederList', 'feederSelectedText', 'Select Feeders');
+        updateLockStates();
+        updateDTs();
+        
+        // If there is only 1 feeder, trigger cascading updates
+        if (feeders.length === 1) {
+            updateDTs();
+        }
     }
 
     async function updateDTs() {
         const bus = getSelected('buList');
+        const undertakings = getSelected('undertakingList');
         const names = getSelected('officerList');
         const feeders = getSelected('feederList');
         
+        updateSelectedText('feederList', 'feederSelectedText', 'Select Feeders');
+        
         if (feeders.length === 0) {
             document.getElementById('dtList').innerHTML = '<div style="color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 40px;">Select Feeder first</div>';
+            updateSelectedText('dtList', 'dtSelectedText', 'Select DT Names');
+            updateLockStates();
             return;
         }
 
@@ -474,6 +1468,7 @@
         bus.forEach(b => query.append('bu', b));
         names.forEach(n => query.append('name', n));
         feeders.forEach(f => query.append('feeder', f));
+        undertakings.forEach(u => query.append('undertaking', u));
 
         const response = await fetch(`/api/job-form/dts?${query.toString()}`);
         const dts = await response.json();
@@ -481,10 +1476,34 @@
         const dtList = document.getElementById('dtList');
         dtList.innerHTML = dts.map(dt => `
             <div class="select-item">
-                <input type="checkbox" value="${dt}" onchange="updatePreview(true)">
+                <input type="checkbox" value="${dt}" onchange="updateLockStates()" ${dts.length === 1 ? 'checked' : ''}>
                 <span>${dt}</span>
             </div>
         `).join('');
+        
+        updateSelectedText('dtList', 'dtSelectedText', 'Select DT Names');
+        updateLockStates();
+    }
+
+    // Explicit unified Generate Preview + Count action
+    async function generatePreviewAndCount() {
+        const bus = getSelected('buList');
+        if (bus.length === 0) {
+            alert("Please select at least one Business Unit.");
+            return;
+        }
+
+        const dts = getSelected('dtList');
+        if (dts.length === 0) {
+            alert("Please select at least one DT Name.");
+            return;
+        }
+
+        // Parallel trigger count & preview updates
+        await Promise.all([
+            checkRowsCount(),
+            updatePreview(true)
+        ]);
     }
 
     async function updatePreview(resetPage = false) {
@@ -493,20 +1512,30 @@
         }
 
         const bus = getSelected('buList');
-        const types = getSelected('typeList');
+        const undertakings = getSelected('undertakingList');
         const names = getSelected('officerList');
         const feeders = getSelected('feederList');
         const dts = getSelected('dtList');
         const formType = document.getElementById('formType').value;
 
+        // Grab types from top-level scope checkboxes
+        const types = [];
+        if (document.getElementById('scopeDMO').checked) types.push('DMO');
+        if (document.getElementById('scopeVendor').checked) types.push('Vendor');
+
+        updateSelectedText('dtList', 'dtSelectedText', 'Select DT Names');
+
         if (dts.length === 0) {
             document.getElementById('previewContainer').style.display = 'none';
+            const esc = document.getElementById('emptyStateContainer');
+            if (esc) esc.style.display = 'flex';
             document.getElementById('totalRows').innerText = "0";
             return;
         }
 
         const query = new URLSearchParams();
         bus.forEach(b => query.append('bu', b));
+        undertakings.forEach(u => query.append('undertaking', u));
         types.forEach(t => query.append('type', t));
         names.forEach(n => query.append('name', n));
         feeders.forEach(f => query.append('feeder', f));
@@ -530,6 +1559,8 @@
 
         if (totalRows > 0) {
             document.getElementById('previewContainer').style.display = 'block';
+            const esc = document.getElementById('emptyStateContainer');
+            if (esc) esc.style.display = 'none';
             document.getElementById('totalRows').innerText = totalRows.toLocaleString();
             
             // Update Table Header
@@ -568,6 +1599,8 @@
             document.getElementById('nextPageBtn').disabled = (currentPage === totalPages);
         } else {
             document.getElementById('previewContainer').style.display = 'none';
+            const esc = document.getElementById('emptyStateContainer');
+            if (esc) esc.style.display = 'flex';
             document.getElementById('totalRows').innerText = "0";
         }
     }
@@ -588,11 +1621,16 @@
 
     async function checkRowsCount() {
         const bus = getSelected('buList');
-        const types = getSelected('typeList');
+        const undertakings = getSelected('undertakingList');
         const names = getSelected('officerList');
         const feeders = getSelected('feederList');
         const dts = getSelected('dtList');
         const formType = document.getElementById('formType').value;
+
+        // Grab types from top-level scope checkboxes
+        const types = [];
+        if (document.getElementById('scopeDMO').checked) types.push('DMO');
+        if (document.getElementById('scopeVendor').checked) types.push('Vendor');
 
         if (bus.length === 0) {
             alert("Please select at least one Business Unit.");
@@ -601,6 +1639,7 @@
 
         const query = new URLSearchParams();
         bus.forEach(b => query.append('bu', b));
+        undertakings.forEach(u => query.append('undertaking', u));
         types.forEach(t => query.append('type', t));
         names.forEach(n => query.append('name', n));
         feeders.forEach(f => query.append('feeder', f));
@@ -629,12 +1668,17 @@
 
     async function downloadJobForm() {
         const bus = getSelected('buList');
-        const types = getSelected('typeList');
+        const undertakings = getSelected('undertakingList');
         const names = getSelected('officerList');
         const feeders = getSelected('feederList');
         const dts = getSelected('dtList');
         const columns = getSelected('columnList');
         const formType = document.getElementById('formType').value;
+
+        // Grab types from top-level scope checkboxes
+        const types = [];
+        if (document.getElementById('scopeDMO').checked) types.push('DMO');
+        if (document.getElementById('scopeVendor').checked) types.push('Vendor');
 
         if (bus.length === 0) {
             alert("Please select at least one Business Unit.");
@@ -647,6 +1691,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     bu: bus,
+                    undertaking: undertakings,
                     type: types,
                     name: names,
                     feeder: feeders,
@@ -697,10 +1742,17 @@
         });
         
         // Trigger chain updates
-        if (listId === 'buList' || listId === 'typeList') updateOfficers();
+        if (listId === 'buList') updateUndertakings();
+        else if (listId === 'undertakingList') updateOfficers();
         else if (listId === 'officerList') updateFeeders();
         else if (listId === 'feederList') updateDTs();
-        else if (listId === 'dtList') updatePreview(true);
+        else if (listId === 'dtList') {
+            updateSelectedText('dtList', 'dtSelectedText', 'Select DT Names');
+            updateLockStates();
+        }
+        else if (listId === 'columnList') {
+            updateSelectedText('columnList', 'columnSelectedText', 'Columns Configuration');
+        }
     }
 </script>
 {% endblock %}

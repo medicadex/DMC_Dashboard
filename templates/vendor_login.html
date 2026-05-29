@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - IE DMC Suite</title>
+    <title>Vendor Login - IE DMC Suite</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -16,6 +16,7 @@
             --primary-color: #f32c91;
             --primary-hover: #e00c7e;
             --danger-color: #ef4444;
+            --success-color: #10b981;
         }
 
         body {
@@ -38,10 +39,11 @@
             max-width: 420px;
             border: 1px solid var(--border-color);
             text-align: center;
+            backdrop-filter: blur(8px);
         }
 
         .logo-container {
-            margin-bottom: 35px;
+            margin-bottom: 30px;
         }
 
         .logo-img {
@@ -51,7 +53,7 @@
         }
 
         .logo-text {
-            font-size: 26px;
+            font-size: 24px;
             font-weight: 800;
             color: var(--primary-color);
             margin: 0;
@@ -59,10 +61,12 @@
         }
         
         .logo-subtext {
-            font-size: 14px;
+            font-size: 13px;
             color: var(--text-muted);
             margin-top: 5px;
             font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .form-group {
@@ -98,28 +102,10 @@
             box-shadow: 0 0 0 4px rgba(243, 44, 145, 0.1);
         }
 
-        .password-wrapper {
-            position: relative;
-        }
-
-        .toggle-password {
-            position: absolute;
-            right: 16px;
-            top: 50%;
-            transform: translateY(-50%);
-            cursor: pointer;
-            color: var(--text-muted);
-            transition: color 0.2s;
-        }
-
-        .toggle-password:hover {
-            color: var(--primary-color);
-        }
-
         .btn-login {
             width: 100%;
             padding: 15px;
-            background-color: var(--primary-color);
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
             color: white;
             border: none;
             border-radius: 10px;
@@ -131,7 +117,6 @@
         }
 
         .btn-login:hover {
-            background-color: var(--primary-hover);
             transform: translateY(-2px);
             box-shadow: 0 10px 20px rgba(243, 44, 145, 0.2);
         }
@@ -150,10 +135,69 @@
             border: 1px solid rgba(239, 68, 68, 0.2);
             display: none;
             font-weight: 500;
+            text-align: left;
         }
         
         .error-message.show {
             display: block;
+        }
+
+        .matches-container {
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 20px;
+            max-height: 160px;
+            overflow-y: auto;
+            padding: 4px;
+            border: 1px solid var(--border-color);
+            background: rgba(255,255,255,0.01);
+            border-radius: 10px;
+            text-align: left;
+        }
+
+        .matches-container.show {
+            display: flex;
+        }
+
+        .match-option {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 13.5px;
+            font-weight: 600;
+            cursor: pointer;
+            color: var(--text-color);
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .match-option:hover {
+            border-color: var(--primary-color);
+            background: rgba(243, 44, 145, 0.05);
+            color: var(--primary-color);
+            transform: translateX(4px);
+        }
+
+        .redirect-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 600;
+            transition: color 0.2s;
+        }
+
+        .redirect-link:hover {
+            color: var(--primary-color);
+        }
+
+        .redirect-link i {
+            margin-right: 5px;
         }
     </style>
 </head>
@@ -163,30 +207,28 @@
         <div class="logo-container">
             <img src="{{ url_for('static', filename='ie_logo.png') }}?v={{ version }}" alt="IE Logo" class="logo-img">
             <h1 class="logo-text">IE DMC SUITE</h1>
-            <div class="logo-subtext">Enterprise Web Edition</div>
+            <div class="logo-subtext">3rd-Party Vendor Portal</div>
         </div>
 
         <div class="error-message" id="errorMsg"></div>
 
-        <form id="loginForm">
-            <div class="form-group">
-                <label for="username">Staff Username</label>
-                <input type="text" id="username" class="form-control" placeholder="e.g. jdoe" required>
-            </div>
+        <!-- Dynamic Matches Selector Panel -->
+        <div class="matches-container" id="matchesContainer"></div>
 
+        <form id="vendorLoginForm">
             <div class="form-group">
-                <label for="password">Security Password</label>
-                <div class="password-wrapper">
-                    <input type="password" id="password" class="form-control" placeholder="••••••••" required>
-                    <i class="far fa-eye toggle-password" id="togglePassword"></i>
+                <label for="vendorName">Vendor Agency Name</label>
+                <input type="text" id="vendorName" class="form-control" placeholder="e.g. PejaSeed or net" required autocomplete="off">
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
+                    <i class="fas fa-info-circle"></i> Type your vendor name (first 3 letters are matched).
                 </div>
             </div>
 
-            <button type="submit" class="btn-login" id="loginBtn">Authorize Access</button>
+            <button type="submit" class="btn-login" id="loginBtn">Authorize Portal Access</button>
         </form>
 
-        <a href="{{ url_for('vendor_login') }}" class="redirect-link" style="display: inline-block; margin-top: 20px; color: var(--text-muted); text-decoration: none; font-size: 13px; font-weight: 600; transition: color 0.2s;" onmouseover="this.style.color='var(--primary-color)'" onmouseout="this.style.color='var(--text-muted)'">
-            <i class="fas fa-users-cog"></i> 3rd-Party Vendor Portal Login
+        <a href="{{ url_for('login') }}" class="redirect-link">
+            <i class="fas fa-user-shield"></i> Standard Staff Authorization
         </a>
         
         <div style="margin-top: 30px; font-size: 12px; color: var(--text-muted);">
@@ -195,55 +237,75 @@
     </div>
 
     <script>
-        const loginForm = document.getElementById('loginForm');
-        const togglePassword = document.getElementById('togglePassword');
-        const passwordInput = document.getElementById('password');
+        const loginForm = document.getElementById('vendorLoginForm');
         const errorMsg = document.getElementById('errorMsg');
         const loginBtn = document.getElementById('loginBtn');
+        const matchesContainer = document.getElementById('matchesContainer');
+        const vendorInput = document.getElementById('vendorName');
 
-        togglePassword.addEventListener('click', () => {
-            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
-            passwordInput.setAttribute('type', type);
-            togglePassword.classList.toggle('fa-eye');
-            togglePassword.classList.toggle('fa-eye-slash');
+        // Clear matches panel when user changes their input manually
+        vendorInput.addEventListener('input', () => {
+            matchesContainer.classList.remove('show');
+            matchesContainer.innerHTML = '';
         });
 
         loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            const username = document.getElementById('username').value;
-            const password = passwordInput.value;
+            const vendorName = vendorInput.value.trim();
+            if (vendorName.length < 3) {
+                errorMsg.innerText = 'Please enter at least 3 characters for the vendor name.';
+                errorMsg.classList.add('show');
+                return;
+            }
             
             loginBtn.innerText = 'Authorizing...';
             loginBtn.disabled = true;
             errorMsg.classList.remove('show');
+            matchesContainer.classList.remove('show');
+            matchesContainer.innerHTML = '';
 
             try {
-                const response = await fetch('/login', {
+                const response = await fetch('/vendor-login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password })
+                    body: JSON.stringify({ vendor_name: vendorName })
                 });
 
                 const data = await response.json();
 
                 if (data.success) {
-                    // Check for next parameter in URL
-                    const urlParams = new URLSearchParams(window.location.search);
-                    const nextUrl = urlParams.get('next') || '/dashboard';
-                    window.location.href = nextUrl;
+                    window.location.href = '/dashboard';
+                } else if (data.multiple_matches) {
+                    // Show select matching options
+                    errorMsg.innerText = data.message;
+                    errorMsg.classList.add('show');
+                    
+                    matchesContainer.innerHTML = data.matches.map(m => `
+                        <div class="match-option" onclick="selectVendor('${m.replace(/'/g, "\\'")}')">
+                            <span>${m}</span>
+                            <i class="fas fa-arrow-right"></i>
+                        </div>
+                    `).join('');
+                    matchesContainer.classList.add('show');
                 } else {
-                    errorMsg.innerText = data.message || 'Authentication failed. Please try again.';
+                    errorMsg.innerText = data.message || 'Authentication failed. Vendor name not recognized.';
                     errorMsg.classList.add('show');
                 }
             } catch (err) {
                 errorMsg.innerText = 'Network error. Please check your connection.';
                 errorMsg.classList.add('show');
             } finally {
-                loginBtn.innerText = 'Authorize Access';
+                loginBtn.innerText = 'Authorize Portal Access';
                 loginBtn.disabled = false;
             }
         });
+
+        // Instant login on match click
+        async function selectVendor(name) {
+            vendorInput.value = name;
+            loginForm.dispatchEvent(new Event('submit'));
+        }
     </script>
 </body>
 </html>

@@ -250,3 +250,107 @@ UI/UX:
 
 Architecture:
 - Added column renaming in `/api/job-form/export` in `app.py` to map raw database headers to their pretty-cased, professional equivalent titles (matching the exact nomenclature style of the desktop app `main_app.py` / `job_form_ui.py`).
+
+--------------------------------------------------
+Date: 2026-05-28
+Developer: Antigravity
+Summary: Job Form Creator Undertaking Filter and Collapsible Dropdown Implementation
+
+Architecture:
+- Added `@app.route('/api/job-form/undertakings')` endpoint in `DMC_Web_Project/app.py` to fetch dynamic undertakings for the selected business units.
+- Refactored `/api/job-form/preview`, `/api/job-form/count`, `/api/job-form/export`, and list update endpoints (`/api/job-form/officers`, `/api/job-form/feeders`, `/api/job-form/dts`) to bind dynamic undertaking filter parameters in SQLAlchemy queries.
+- Added `get_undertakings` query method in `DMC_Web_Project/services/job_form_service.py` to retrieve distinct undertakings matching business units.
+- Extended `get_officer_names`, `get_feeders`, `get_dt_names`, and base query generation methods in the service layer to support dynamic SQL query parameterization for undertakings.
+
+UI/UX:
+- Re-architected all multi-select input blocks in `DMC_Web_Project/templates/job_form.html` into modern, collapsible, glassmorphic custom dropdown components.
+- Added a new Undertaking filter right after Business Unit in the Job Form Creator grid.
+- Implemented elegant CSS-based chevron animations, selected counts, and dynamic label updates when filter selections change.
+- Wrote highly responsive JavaScript event handlers to facilitate dynamic, cascading updates (BUs -> Undertakings -> Officers -> Feeders -> DTs) with robust outside-click collapse listeners.
+
+--------------------------------------------------
+Date: 2026-05-28
+Developer: Antigravity
+Summary: Guided Accordion UI Redesign & Premium UX Implementation for Job Form Creator
+
+UI/UX:
+- Replaced the complex collapsible dropdowns in job_form.html with a modern, high-end guided Accordion Step-by-Step wizard.
+- Ensured zero-overlapping layout bugs by restricting the view to exactly one expanded step at any time, flowing elements inline dynamically.
+- Implemented real-time dynamic step subtitles that display current selections and active states globally across collapsed accordion steps.
+- Introduced dynamic green completion checkmarks (.step-status-icon) next to steps that have valid selections to gamify the wizard flow.
+- Wrote elegant CSS for accordion elements, including custom hover highlights, active outline indicators, smooth chevron rotations, and responsive fluid boundaries.
+- Redesigned the Job Form Type selector from a native HTML dropdown to premium custom Pill selectors with active background glows and layout transitions, keeping hidden element support to maintain full compatibility.
+
+--------------------------------------------------
+Date: 2026-05-28
+Developer: Antigravity
+Summary: Frameless Accordion UI Refinement & Live Progress Tracker Implementation
+
+UI/UX:
+- Upgraded the Job Form Creator filter system into a completely frameless accordion design, removing all heavy dark borders and card-level step boundaries for a spacious typographic aesthetic.
+- Eliminated boxy inner checkbox rectangles (.multi-select-container), allowing select list items to blend seamlessly into active accordion step backgrounds.
+- Re-aligned the green completion checkmarks to sit on the LEFT next to the step titles, acting as modern checklist bullets and solving chevron overcrowding layout overlaps.
+- Integrated a premium, interactive Setup Checklist welcome dashboard (#emptyStateContainer) in the right-side preview panel.
+- Wrote real-time JavaScript progress tracking logic (updateTracker()) that checks off setup tasks on the welcome dashboard in real time as the user configures filters on the left.
+- Converted column multi-select items to frameless boxes, removing redundant inline borders and backgrounds in setupColumns().
+
+--------------------------------------------------
+Date: 2026-05-28
+Developer: Antigravity
+Summary: Job Form Creator 3-Column Matrix Grid & Top-Level Horizontal Scope Selector Redesign
+
+UI/UX:
+- Re-architected templates/job_form.html layout from a cramped 390px sidebar to a vertical full-width page structure, stackable and fully responsive.
+- Designed and built a premium top-level "Select Officer Scope" horizontal card with interactive custom-styled DMO and Vendor checkboxes.
+- Implemented smart cascading lock overrides across the remaining 7 filter steps, locking the entire filter matrix with transparent overlays and a clear warning until at least one officer scope is selected.
+- Re-aligned the 7 filters into a full-width 3-column matrix grid (Col 1: Business Unit, Undertaking, Job Form Type; Col 2: Officer Name, Feeders; Col 3: DT Names, Columns Config).
+- Restricted accordion toggle expansions (toggleStep) to only affect and collapse steps within the same matrix column, letting items in lower positions push down fluidly without affecting adjacent columns.
+- Unified the "Check Rows" and live preview actions into a single premium "Generate Preview & Count" button, running parallel data loading and total count requests to minimize backend DB calls.
+- Relocated the XLSX download action button directly into the Live Data Preview panel header.
+- Enriched the setup progress welcome checklist dashboard (#emptyStateContainer) with a 5th scope selection checklist task, tracking progress dynamically as selections cascade.
+
+--------------------------------------------------
+Date: 2026-05-29
+Developer: Antigravity
+Summary: Local MySQL Chunk Uploader Script Implementation
+
+Architecture & Utility:
+- Created prompt.py in the root workspace folder to enable memory-efficient chunk-by-chunk uploading of extremely large CSV or Excel files.
+- Configured prompt.py database connection logic to read and reuse local database credentials (such as LOCAL_DB_USER, LOCAL_DB_PASS, and LOCAL_DB_NAME) from the project .env configuration.
+- Engineered CSV and Excel parsing pipelines using pandas and SQLAlchemy to cleanly slice data, sanitize column headers (e.g. replacing spaces with underscores and lowercasing), and stream batches sequentially into staging MySQL tables.
+
+--------------------------------------------------
+Date: 2026-05-29
+Developer: Antigravity
+Summary: Dedicated Vendor Login Flow & Strict Role-Based Data Isolation
+
+Architecture:
+- Added POST /vendor-login prefix matching and interactive matching vendor selection options panel.
+- Refactored /api/autocomplete and /api/account_dashboard/<account_number> endpoints to enforce strict role-based data isolation for Vendors.
+- Overrode /api/job-form/preview, /api/job-form/count, and /api/job-form/export endpoints to dynamically limit officer filters strictly to the logged-in Vendor and their associated BUs.
+- Modified /api/performance/rank and /api/performance/export queries to inject vendor SQL clauses, restricting recovery data strictly to the authenticated Vendor's records.
+
+UI/UX:
+- Standardized templates/job_form.html to automatically hide the top-level scope selector card for logged-in Vendors while keeping elements in the DOM to prevent JS errors.
+- Enhanced dropdown filters in templates/job_form.html to automatically pre-select single-option options and execute immediate cascading cascading updates.
+- Enabled index root (/) route access for Vendors to showcase a custom, premium greeting welcome banner card with time-sensitive salutations.
+- Modified templates/base.html to make the Homepage sidebar link visible to Vendors.
+
+--------------------------------------------------
+Date: 2026-05-29
+Developer: Antigravity
+Summary: Vendor Job Form Dropdown UI Legibility Fix
+
+UI/UX:
+- Fixed an issue where the background color of dropdowns and active accordion steps in the job form creator was hardcoded to a dark color, rendering text illegible in light mode.
+- Replaced the static dark rgba color with dynamic CSS variables `var(--card-bg)` and `var(--bg-color)` for `accordion-step.active` and `accordion-step.locked`, ensuring proper contrast regardless of the active theme (light or dark).
+
+--------------------------------------------------
+Date: 2026-05-29
+Developer: Antigravity
+Summary: Rearrange Job Form Layout
+
+UI/UX:
+- Rearranged the job form dropdown filter steps into logical rows.
+- Implemented matrix column distribution: Row 1 (BU, Undertaking, Officer Name), Row 2 (Feeder, DT Name, Job Form Type), and Row 3 (Columns Configuration).
+

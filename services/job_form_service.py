@@ -19,41 +19,68 @@ class JobFormService:
             res = conn.execute(text(f"SELECT DISTINCT {column} FROM {table} WHERE {column} IS NOT NULL ORDER BY {column}"))
             return [r[0] for r in res.fetchall()]
 
-    def get_officer_names(self, bus, otypes):
+    def get_officer_names(self, bus, otypes, undertakings=None):
         with self.engine.connect() as conn:
             placeholders_bu = [f":bu{i}" for i in range(len(bus))]
             placeholders_ot = [f":ot{i}" for i in range(len(otypes))]
             params = {f"bu{i}": b for i, b in enumerate(bus)}
             params.update({f"ot{i}": o for i, o in enumerate(otypes)})
             
-            sql = f"SELECT DISTINCT account_officer FROM customers WHERE business_unit IN ({', '.join(placeholders_bu)}) AND officer_type IN ({', '.join(placeholders_ot)}) ORDER BY account_officer"
+            undertaking_clause = ""
+            if undertakings:
+                placeholders_un = [f":un{i}" for i in range(len(undertakings))]
+                undertaking_clause = f" AND undertaking IN ({', '.join(placeholders_un)})"
+                params.update({f"un{i}": u for i, u in enumerate(undertakings)})
+            
+            sql = f"SELECT DISTINCT account_officer FROM customers WHERE business_unit IN ({', '.join(placeholders_bu)}){undertaking_clause} AND officer_type IN ({', '.join(placeholders_ot)}) ORDER BY account_officer"
             res = conn.execute(text(sql), params)
             return [r[0] for r in res.fetchall()]
 
-    def get_feeders(self, bus, names):
+    def get_feeders(self, bus, names, undertakings=None):
         with self.engine.connect() as conn:
             p_bu = [f":bu{i}" for i in range(len(bus))]
             p_nm = [f":n{i}" for i in range(len(names))]
             params = {f"bu{i}": b for i, b in enumerate(bus)}
             params.update({f"n{i}": n for i, n in enumerate(names)})
             
-            sql = f"SELECT DISTINCT feeder FROM customers WHERE business_unit IN ({', '.join(p_bu)}) AND account_officer IN ({', '.join(p_nm)}) ORDER BY feeder"
+            undertaking_clause = ""
+            if undertakings:
+                p_un = [f":un{i}" for i in range(len(undertakings))]
+                undertaking_clause = f" AND undertaking IN ({', '.join(p_un)})"
+                params.update({f"un{i}": u for i, u in enumerate(undertakings)})
+            
+            sql = f"SELECT DISTINCT feeder FROM customers WHERE business_unit IN ({', '.join(p_bu)}){undertaking_clause} AND account_officer IN ({', '.join(p_nm)}) ORDER BY feeder"
             res = conn.execute(text(sql), params)
             return [r[0] for r in res.fetchall()]
 
-    def get_dt_names(self, bus, feeders):
+    def get_dt_names(self, bus, feeders, undertakings=None):
         with self.engine.connect() as conn:
             p_bu = [f":bu{i}" for i in range(len(bus))]
             p_f = [f":f{i}" for i in range(len(feeders))]
             params = {f"bu{i}": b for i, b in enumerate(bus)}
             params.update({f"f{i}": f for i, f in enumerate(feeders)})
             
-            sql = f"SELECT DISTINCT dt_name FROM customers WHERE business_unit IN ({', '.join(p_bu)}) AND feeder IN ({', '.join(p_f)}) ORDER BY dt_name"
+            undertaking_clause = ""
+            if undertakings:
+                p_un = [f":un{i}" for i in range(len(undertakings))]
+                undertaking_clause = f" AND undertaking IN ({', '.join(p_un)})"
+                params.update({f"un{i}": u for i, u in enumerate(undertakings)})
+            
+            sql = f"SELECT DISTINCT dt_name FROM customers WHERE business_unit IN ({', '.join(p_bu)}){undertaking_clause} AND feeder IN ({', '.join(p_f)}) ORDER BY dt_name"
+            res = conn.execute(text(sql), params)
+            return [r[0] for r in res.fetchall()]
+
+    def get_undertakings(self, bus):
+        with self.engine.connect() as conn:
+            p_bu = [f":bu{i}" for i in range(len(bus))]
+            params = {f"bu{i}": b for i, b in enumerate(bus)}
+            sql = f"SELECT DISTINCT undertaking FROM customers WHERE business_unit IN ({', '.join(p_bu)}) AND undertaking IS NOT NULL AND undertaking != '' ORDER BY undertaking"
             res = conn.execute(text(sql), params)
             return [r[0] for r in res.fetchall()]
 
     def _get_base_query_parts(self, filters):
         bus = filters.get("bus", [])
+        undertakings = filters.get("undertakings", [])
         otypes = filters.get("otypes", [])
         onames = filters.get("onames", [])
         feeders = filters.get("feeders", [])
@@ -67,6 +94,10 @@ class JobFormService:
             p_bu = [f":bu{i}" for i in range(len(bus))]
             filter_clauses.append(f"c.business_unit IN ({', '.join(p_bu)})")
             params.update({f"bu{i}": b for i, b in enumerate(bus)})
+        if undertakings:
+            p_un = [f":un{i}" for i in range(len(undertakings))]
+            filter_clauses.append(f"c.undertaking IN ({', '.join(p_un)})")
+            params.update({f"un{i}": u for i, u in enumerate(undertakings)})
         if otypes:
             p_ot = [f":ot{i}" for i in range(len(otypes))]
             filter_clauses.append(f"c.officer_type IN ({', '.join(p_ot)})")

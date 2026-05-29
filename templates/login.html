@@ -185,8 +185,8 @@
             <button type="submit" class="btn-login" id="loginBtn">Authorize Access</button>
         </form>
 
-        <a href="{{ url_for('vendor_login') }}" class="redirect-link" style="display: inline-block; margin-top: 20px; color: var(--text-muted); text-decoration: none; font-size: 13px; font-weight: 600; transition: color 0.2s;" onmouseover="this.style.color='var(--primary-color)'" onmouseout="this.style.color='var(--text-muted)'">
-            <i class="fas fa-users-cog"></i> 3rd-Party Vendor Portal Login
+        <a href="{{ url_for('vendor_login') }}" class="redirect-link" style="display: inline-block; margin-top: 20px; color: var(--text-muted); text-decoration: none; font-size: 13px; font-weight: 700; transition: color 0.2s;" onmouseover="this.style.color='var(--primary-color)'" onmouseout="this.style.color='var(--text-muted)'">
+            <i class="fas fa-users-cog"></i> Vendor Login
         </a>
         
         <div style="margin-top: 30px; font-size: 12px; color: var(--text-muted);">
@@ -228,10 +228,7 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    // Check for next parameter in URL
-                    const urlParams = new URLSearchParams(window.location.search);
-                    const nextUrl = urlParams.get('next') || '/dashboard';
-                    window.location.href = nextUrl;
+                    window.location.href = '/';
                 } else {
                     errorMsg.innerText = data.message || 'Authentication failed. Please try again.';
                     errorMsg.classList.add('show');

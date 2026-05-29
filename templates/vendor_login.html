@@ -218,7 +218,7 @@
         <form id="vendorLoginForm">
             <div class="form-group">
                 <label for="vendorName">Vendor Agency Name</label>
-                <input type="text" id="vendorName" class="form-control" placeholder="e.g. PejaSeed or net" required autocomplete="off">
+                <input type="text" id="vendorName" class="form-control" placeholder="e.g. ade or ike" required autocomplete="on">
                 <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
                     <i class="fas fa-info-circle"></i> Type your vendor name (first 3 letters are matched).
                 </div>
@@ -275,7 +275,7 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    window.location.href = '/dashboard';
+                    window.location.href = '/';
                 } else if (data.multiple_matches) {
                     // Show select matching options
                     errorMsg.innerText = data.message;

@@ -362,7 +362,7 @@
             let discountHtml = '';
             if(fin.discounts && fin.discounts.length > 0) {
                 let itemsHtml = fin.discounts.map(d => `<div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 5px;">
-                        <span>${d.date}</span>
+                        <span>${d.status === 'valid' ? 'Approved' : d.status === 'rejected' ? 'Rejected' : 'Pending'}</span>
                         <span style="color: var(--success-color);">${formatCurrency(d.amount)}</span>
                     </div>`).join('');
                 discountHtml = `<div class="info-row"><span class="label">Discounts</span><span class="val">${itemsHtml}</span></div>`;
@@ -373,7 +373,7 @@
             let adjHtml = '';
             if(fin.adjustments && fin.adjustments.length > 0) {
                 let itemsHtml = fin.adjustments.map(d => `<div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 5px;">
-                        <span>${d.date}</span>
+                        <span>${d.status === 'valid' ? 'Approved' : d.status === 'rejected' ? 'Rejected' : 'Pending'}</span>
                         <span style="color: var(--primary-color);">${formatCurrency(d.amount)}</span>
                     </div>`).join('');
                 adjHtml = `<div class="info-row"><span class="label">Adjustments</span><span class="val">${itemsHtml}</span></div>`;

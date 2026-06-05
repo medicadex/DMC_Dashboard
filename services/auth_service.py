@@ -11,8 +11,6 @@ class AuthService:
         self.repo.log_activity(username, action, details, event_type='MINOR')
 
     def login(self, username, password):
-        if self.session.is_account_locked(username):
-            raise Exception("Account locked due to too many failed attempts.")
 
         user = self.repo.get_user_by_username(username)
         if not user:
@@ -52,10 +50,17 @@ class AuthService:
             
             # Use mapping access to build user dict
             u_mapping = user if isinstance(user, dict) else (user._mapping if hasattr(user, '_mapping') else user)
+            
+            # Synthesize full_name from first_name and surname
+            fname = u_mapping.get('first_name', '') if hasattr(u_mapping, 'get') else u_mapping['first_name']
+            sname = u_mapping.get('surname', '') if hasattr(u_mapping, 'get') else u_mapping['surname']
+            synth_full_name = f"{fname or ''} {sname or ''}".strip()
+            
             return {
                 "id": u_mapping.get('id') if hasattr(u_mapping, 'get') else u_mapping['id'],
                 "username": u_mapping.get('username') if hasattr(u_mapping, 'get') else u_mapping['username'],
-                "full_name": u_mapping.get('full_name') if hasattr(u_mapping, 'get') else u_mapping['full_name'],
+                "staff_id": u_mapping.get('staff_id') if hasattr(u_mapping, 'get') else u_mapping['staff_id'],
+                "full_name": synth_full_name,
                 "role": u_mapping.get('role') if hasattr(u_mapping, 'get') else u_mapping['role']
             }
         else:
@@ -97,6 +102,47 @@ class AuthService:
         except Exception as e:
             return False, f"Failed to reset password: {str(e)}"
 
+    def reset_password_via_staff_id(self, username, staff_id, new_password):
+        """Resets password after verifying staff_id."""
+        user = self.repo.get_user_full_by_username(username)
+        if not user:
+            return False, "User not found."
+            
+        stored_staff_id = getattr(user, 'staff_id', None)
+        if not stored_staff_id:
+            try:
+                stored_staff_id = user._mapping.get('staff_id') if hasattr(user, '_mapping') else user['staff_id']
+            except:
+                pass
+                
+        if not stored_staff_id or str(stored_staff_id).lower().replace(" ", "") != str(staff_id).lower().replace(" ", ""):
+            return False, "Invalid Staff ID provided."
+            
+        # 2. Minimum Password Requirement
+        if len(new_password) < 4:
+            return False, "Password must be at least 4 characters long."
+
+        # 3. Check Password History
+        user_id = getattr(user, 'id', None)
+        if not user_id:
+            user_id = user._mapping.get('id') if hasattr(user, '_mapping') else user['id']
+
+        history = self.repo.get_password_history(user_id)
+        for old_hash in history:
+            if SecurityManager.verify_password(new_password, old_hash):
+                return False, "Cannot reuse one of the last 3 passwords."
+            
+        # 4. Update Password
+        new_hash = SecurityManager.hash_password(new_password)
+        try:
+            self.repo.update_staff_password(username, new_hash)
+            self.repo.add_password_to_history(user_id, new_hash)
+            self.repo.log_activity(username, "PWD_RESET_SUCCESS", "Reset via Staff ID verification", event_type='MAJOR')
+            self.session.reset_login_attempts(username)
+            return True, "Password reset successfully."
+        except Exception as e:
+            return False, f"Failed to reset password: {str(e)}"
+
     def change_password(self, username, current_password, new_password):
         """Securely changes a user's password with validation."""
         user = self.repo.get_user_full_by_username(username)
@@ -114,22 +160,16 @@ class AuthService:
             self.repo.log_activity(username, "PWD_CHANGE_FAIL", "Invalid current password", event_type='MAJOR')
             return False, "Incorrect current password."
             
-        # 2. Enforce Strong Password Requirements
-        if len(new_password) < 8:
-            return False, "Password must be at least 8 characters long."
-        
-        import re
-        if not re.search(r"[A-Z]", new_password):
-            return False, "Password must contain at least one uppercase letter."
-        if not re.search(r"[a-z]", new_password):
-            return False, "Password must contain at least one lowercase letter."
-        if not re.search(r"\d", new_password):
-            return False, "Password must contain at least one number."
-        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", new_password):
-            return False, "Password must contain at least one special character."
+        # 2. Minimum Password Requirement
+        if len(new_password) < 4:
+            return False, "Password must be at least 4 characters long."
 
         # 3. Check Password History
-        history = self.repo.get_password_history(user.id)
+        user_id = getattr(user, 'id', None)
+        if not user_id:
+            user_id = user._mapping.get('id') if hasattr(user, '_mapping') else user['id']
+
+        history = self.repo.get_password_history(user_id)
         for old_hash in history:
             if SecurityManager.verify_password(new_password, old_hash):
                 return False, "Cannot reuse one of the last 3 passwords."
@@ -138,7 +178,7 @@ class AuthService:
         new_hash = SecurityManager.hash_password(new_password)
         try:
             self.repo.update_staff_password(username, new_hash)
-            self.repo.add_password_to_history(user.id, new_hash)
+            self.repo.add_password_to_history(user_id, new_hash)
             self.repo.log_activity(username, "PWD_CHANGE_SUCCESS", event_type='MAJOR')
             return True, "Password changed successfully."
         except Exception as e:

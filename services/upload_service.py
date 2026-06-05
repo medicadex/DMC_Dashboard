@@ -129,7 +129,7 @@ class UploadService:
         return df_mapped
 
     def _push_to_rds(self, table_name: str, df_mapped: pd.DataFrame,
-                     chunk_size: int = 5000, progress_callback=None) -> dict:
+                     chunk_size: int = 500, progress_callback=None) -> dict:
         """
         Core RDS push pipeline:
           1. Generate transaction_id deduplication keys (if not already present)
@@ -190,7 +190,7 @@ class UploadService:
                 # Deduplication strategy: Use ON DUPLICATE KEY UPDATE to avoid wiping skipped columns
                 conflict_keys = {
                     'customers': 'account_number',
-                    'staff': 'username',
+                    'staff': 'staff_id',
                     'performance_config': 'bu_name',
                     'discounts': 'transaction_id',
                     'adjustments': 'transaction_id',
@@ -204,7 +204,10 @@ class UploadService:
                     update_cols = [c for c in cols_to_insert if c != conflict_key]
                     if update_cols:
                         verb = "REPLACE"
-                        update_clause = ", ".join(f"`{c}` = VALUES(`{c}`)" for c in update_cols)
+                        update_clause = ", ".join(
+                            f"`{c}` = CASE WHEN VALUES(`{c}`) IS NULL OR VALUES(`{c}`) = '' OR VALUES(`{c}`) = 'nan' THEN `{table_name}`.`{c}` ELSE VALUES(`{c}`) END"
+                            for c in update_cols
+                        )
                         merge_sql = text(
                             f"INSERT INTO `{table_name}` ({escaped_cols}) "
                             f"SELECT {escaped_cols} FROM `{staging_table}` "

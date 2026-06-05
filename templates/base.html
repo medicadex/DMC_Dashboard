@@ -291,6 +291,10 @@
                     <i class="fas fa-database"></i>
                     <span>Admin Table Manager</span>
                 </a>
+                <a href="{{ url_for('admin_staff_management') }}" class="nav-item {% if active_page == 'admin_staff' %}active{% endif %}">
+                    <i class="fas fa-users-cog"></i>
+                    <span>Staff Management</span>
+                </a>
                 {% endif %}
             </nav>
 
@@ -308,6 +312,12 @@
                     </div>
                 </div>
                 {% endif %}
+                
+                <a href="#" class="nav-item" onclick="openProfileModal()" style="margin-bottom: 5px; padding: 10px; border-radius: 6px;">
+                    <i class="fas fa-user-edit" style="margin-right: 10px;"></i>
+                    <span>My Profile</span>
+                </a>
+                
                 <a href="{{ url_for('logout') }}" class="logout-btn">
                     <i class="fas fa-sign-out-alt" style="margin-right: 10px;"></i>
                     <span>Logout</span>
@@ -412,5 +422,115 @@
         });
     </script>
     {% block scripts %}{% endblock %}
+
+<!-- Profile Modal -->
+<div id="profileModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+    <div style="background: var(--card-bg); width: 100%; max-width: 500px; padding: 25px; border-radius: 12px; border: 1px solid var(--border-color);">
+        <h3 style="margin-top: 0; margin-bottom: 20px;">Request Profile Update</h3>
+        <p style="font-size: 13px; color: var(--warning-color); margin-bottom: 15px;"><i class="fas fa-info-circle"></i> Staff ID cannot be modified. Updates require Admin approval.</p>
+        
+        <form id="profileUpdateForm">
+            <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                <div style="flex: 1;">
+                    <label style="display: block; font-size: 12px; margin-bottom: 5px; color: var(--text-muted);">First Name</label>
+                    <input type="text" id="p_firstname" class="form-control" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);" value="{{ session.get('user', {}).get('first_name', '') }}">
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; font-size: 12px; margin-bottom: 5px; color: var(--text-muted);">Surname</label>
+                    <input type="text" id="p_surname" class="form-control" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);" value="{{ session.get('user', {}).get('surname', '') }}">
+                </div>
+            </div>
+            
+            <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                <div style="flex: 1;">
+                    <label style="display: block; font-size: 12px; margin-bottom: 5px; color: var(--text-muted);">Email</label>
+                    <input type="email" id="p_email" class="form-control" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);" value="{{ session.get('user', {}).get('email', '') }}">
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; font-size: 12px; margin-bottom: 5px; color: var(--text-muted);">Phone Number</label>
+                    <input type="text" id="p_phone" class="form-control" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);" value="{{ session.get('user', {}).get('phone_number', '') }}">
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 15px; margin-bottom: 20px;">
+                <div style="flex: 1;">
+                    <label style="display: block; font-size: 12px; margin-bottom: 5px; color: var(--text-muted);">Officer Type</label>
+                    <select id="p_officertype" class="form-control" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);">
+                        <option value="">Select Type</option>
+                        <option value="DMO" {% if session.get('user', {}).get('officer_type') == 'DMO' %}selected{% endif %}>DMO</option>
+                        <option value="Vendor" {% if session.get('user', {}).get('officer_type') == 'Vendor' %}selected{% endif %}>Vendor</option>
+                        <option value="Team Lead" {% if session.get('user', {}).get('officer_type') == 'Team Lead' %}selected{% endif %}>Team Lead</option>
+                        <option value="Specialist" {% if session.get('user', {}).get('officer_type') == 'Specialist' %}selected{% endif %}>Specialist</option>
+                        <option value="Analyst" {% if session.get('user', {}).get('officer_type') == 'Analyst' %}selected{% endif %}>Analyst</option>
+                        <option value="Management" {% if session.get('user', {}).get('officer_type') == 'Management' %}selected{% endif %}>Management</option>
+                    </select>
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; font-size: 12px; margin-bottom: 5px; color: var(--text-muted);">Business Unit</label>
+                    <select id="p_bu" class="form-control" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);">
+                        <option value="">Select BU</option>
+                        <option value="AKOWONJO" {% if session.get('user', {}).get('business_unit') == 'AKOWONJO' %}selected{% endif %}>AKOWONJO</option>
+                        <option value="ABULE EGBA" {% if session.get('user', {}).get('business_unit') == 'ABULE EGBA' %}selected{% endif %}>ABULE EGBA</option>
+                        <option value="IKEJA" {% if session.get('user', {}).get('business_unit') == 'IKEJA' %}selected{% endif %}>IKEJA</option>
+                        <option value="IKORODU" {% if session.get('user', {}).get('business_unit') == 'IKORODU' %}selected{% endif %}>IKORODU</option>
+                        <option value="OSHODI" {% if session.get('user', {}).get('business_unit') == 'OSHODI' %}selected{% endif %}>OSHODI</option>
+                        <option value="SHOMOLU" {% if session.get('user', {}).get('business_unit') == 'SHOMOLU' %}selected{% endif %}>SHOMOLU</option>
+                        <option value="CHQ" {% if session.get('user', {}).get('business_unit') == 'CHQ' %}selected{% endif %}>CHQ</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" onclick="document.getElementById('profileModal').style.display='none'" style="padding: 10px 15px; border-radius: 6px; border: none; background: var(--border-color); color: var(--text-color); cursor: pointer;">Cancel</button>
+                <button type="submit" id="profileSubmitBtn" style="padding: 10px 15px; border-radius: 6px; border: none; background: var(--primary-color); color: white; cursor: pointer;">Submit Request</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openProfileModal() {
+    document.getElementById("profileModal").style.display = "flex";
+}
+
+document.getElementById("profileUpdateForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("profileSubmitBtn");
+    btn.disabled = true;
+    btn.innerHTML = "Submitting...";
+    
+    const payload = {
+        action_type: "UPDATE",
+        username: "{{ session.get('user', {}).get('username', '') }}",
+        staff_id: "{{ session.get('user', {}).get('staff_id', '') }}",
+        first_name: document.getElementById("p_firstname").value,
+        surname: document.getElementById("p_surname").value,
+        email: document.getElementById("p_email").value,
+        phone_number: document.getElementById("p_phone").value,
+        officer_type: document.getElementById("p_officertype").value,
+        business_unit: document.getElementById("p_bu").value,
+        name_official: (document.getElementById("p_firstname").value + " " + document.getElementById("p_surname").value).trim()
+    };
+    
+    try {
+        const res = await fetch("/api/staff/request-profile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        alert(data.message);
+        if(data.success) {
+            document.getElementById("profileModal").style.display = "none";
+        }
+    } catch(err) {
+        alert("Error submitting request.");
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = "Submit Request";
+    }
+});
+</script>
 </body>
+
 </html>

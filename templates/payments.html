@@ -406,11 +406,12 @@
                     <th>Officer</th>
                     <th>BU</th>
                     <th>Type</th>
+                    <th>Action</th>
                 </tr>
             </thead>
             <tbody id="paymentsBody">
                 <tr>
-                    <td colspan="7" style="text-align: center; padding: 60px; color: var(--text-muted);">
+                    <td colspan="8" style="text-align: center; padding: 60px; color: var(--text-muted);">
                         <i class="fas fa-search" style="font-size: 24px; margin-bottom: 15px; display: block; opacity: 0.5;"></i>
                         Select filters and click "Process" to view payment records.
                     </td>
@@ -578,7 +579,7 @@
         currentPage = response.current_page || 1;
         
         if (totalRows === 0) {
-            body.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px;">No payments found for selected criteria.</td></tr>';
+            body.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px;">No payments found for selected criteria.</td></tr>';
             summaryBar.style.display = 'none';
             paginationBar.style.display = 'none';
             if (foot) foot.style.display = 'none';
@@ -598,6 +599,11 @@
                         <td>${p.account_officer || ''}</td>
                         <td>${p.business_unit || ''}</td>
                         <td><span class="badge ${p.officer_type === 'DMO' ? 'badge-primary' : 'badge-warning'}">${p.officer_type || ''}</span></td>
+                        <td>
+                            <button class="select-all-btn" onclick="viewInDashboard('${p.account_number}')" title="View in Dashboard">
+                                <i class="fas fa-external-link-alt"></i>
+                            </button>
+                        </td>
                     </tr>
                 `;
             }).join('');
@@ -610,7 +616,7 @@
                 <tr style="font-weight: 700; background: rgba(243, 44, 145, 0.07); border-top: 2px solid var(--border-color);">
                     <td colspan="3" style="text-align: right; padding: 12px 15px;">GRAND TOTAL</td>
                     <td style="color: var(--primary-color); padding: 12px 15px;">₦${grandTotalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td colspan="3"></td>
+                    <td colspan="4"></td>
                 </tr>
             `;
             
@@ -619,6 +625,10 @@
             document.getElementById('prevPageBtn').disabled = (currentPage === 1);
             document.getElementById('nextPageBtn').disabled = (currentPage === totalPages);
         }
+    }
+
+    function viewInDashboard(acc) {
+        window.location.href = `/dashboard?acc=${acc}`;
     }
 
     function navigatePage(direction) {

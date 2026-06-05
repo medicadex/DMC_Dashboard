@@ -70,4 +70,5 @@ class SessionManager:
             del self.login_attempts[username]
 
     def is_account_locked(self, username: str) -> bool:
-        return self.login_attempts.get(username, 0) >= 5
+        # Lockout disabled per user request
+        return False

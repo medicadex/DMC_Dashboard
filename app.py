@@ -147,25 +147,58 @@ def add_header(response):
 @app.route('/')
 @login_required
 def index():
-    return render_template('home.html', active_page='home')
+    require_password_change = session.pop('require_password_change', False)
+    return render_template('home.html', active_page='home', require_password_change=require_password_change)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         data = request.get_json()
-        username = data.get('username')
+        username = data.get('username', '').strip()
         password = data.get('password')
         
+        if username and username.lower().endswith('@ikejaelectric.com'):
+            return jsonify({'success': False, 'message': 'Wrong Username, kindly log in with IE username WITHOUT @ikejaelectric.com'}), 401
+            
+        if username and username.lower() == 'user':
+            return jsonify({'success': False, 'message': 'Kindly sign in with your IE username and staff id'}), 401
+
         try:
             user_data = auth_service.login(username, password)
             if user_data:
                 session['user'] = user_data
+                
+                # Check for default password
+                staff_id = user_data.get('staff_id', '')
+                if staff_id and str(password).strip() == str(staff_id).strip().lower():
+                    session['require_password_change'] = True
+                    
                 return jsonify({'success': True, 'user': user_data})
+            
+            attempts = session_manager.login_attempts.get(username, 0)
+            if attempts >= 3:
+                return jsonify({'success': False, 'requires_reset': True, 'username': username, 'message': 'Maximum login attempts reached.'}), 401
+                
             return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
         except Exception as e:
             logger.error(f"Login error: {e}", exc_info=True)
             return jsonify({'success': False, 'message': 'An error occurred during authentication.'}), 401
     return render_template('login.html')
+
+@app.route('/api/staff/reset-password-forced', methods=['POST'])
+def reset_password_forced():
+    data = request.get_json()
+    username = data.get('username')
+    staff_id = data.get('staff_id')
+    new_password = data.get('new_password')
+
+    if not all([username, staff_id, new_password]):
+        return jsonify({'success': False, 'message': 'All fields are required.'}), 400
+
+    success, message = auth_service.reset_password_via_staff_id(username, staff_id, new_password)
+    if success:
+        return jsonify({'success': True, 'message': message})
+    return jsonify({'success': False, 'message': message}), 400
 
 @app.route('/vendor-login', methods=['GET', 'POST'])
 def vendor_login():
@@ -298,6 +331,277 @@ def report_uploader():
                 
     return render_template('upload.html', active_page='upload')
     
+
+import csv
+from werkzeug.utils import secure_filename
+from utils.security import SecurityManager
+
+@app.route('/api/staff/request-profile', methods=['POST'])
+def request_profile():
+    data = request.get_json()
+    action = data.get('action_type', 'CREATE')
+    if action == 'CREATE':
+        if data.get('password'):
+            data['password_hash'] = SecurityManager.hash_password(data['password'])
+        else:
+            return jsonify({'success': False, 'message': 'Password required for new profile.'}), 400
+    else:
+        if data.get('password'):
+            data['password_hash'] = SecurityManager.hash_password(data['password'])
+        
+    submitted_by = session['user']['username'] if 'user' in session else data.get('username')
+    success = staff_repo.create_pending_profile(action, data, submitted_by)
+    if success:
+        return jsonify({'success': True, 'message': 'Profile request submitted for admin approval.'})
+    else:
+        return jsonify({'success': False, 'message': 'Failed to submit profile request.'}), 500
+
+@app.route('/admin/staff')
+@login_required
+def admin_staff_management():
+    if session['user'].get('role') != 'Admin':
+        return redirect(url_for('index'))
+    return render_template('admin_staff_management.html', active_page='admin_staff')
+
+@app.route('/api/staff/pending', methods=['GET'])
+@login_required
+def get_pending_profiles():
+    if session['user'].get('role') != 'Admin':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    profiles = staff_repo.get_pending_profiles()
+    return jsonify({'success': True, 'data': profiles})
+
+@app.route('/api/staff/approve/<int:req_id>', methods=['POST'])
+@login_required
+def approve_pending_profile(req_id):
+    if session['user'].get('role') != 'Admin':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+        
+    req = staff_repo.get_pending_profile_by_id(req_id)
+    if not req:
+        return jsonify({'success': False, 'message': 'Request not found'}), 404
+        
+    if req.get('action_type') == 'CREATE':
+        em = req.get('email', '')
+        calc_username = em.split('@')[0] if em else None
+        staff_repo.add_staff(
+            username=calc_username,
+            hashed_pwd=req.get('password_hash') or '',
+            first_name=req.get('first_name', ''),
+            surname=req.get('surname', ''),
+            role=req.get('role', 'User'),
+            email=req.get('email'),
+            phone_number=req.get('phone_number'),
+            staff_id=req.get('staff_id'),
+            officer_type=req.get('officer_type'),
+            business_unit=req.get('business_unit'),
+            name_official=req.get('name_official'),
+            name_variant=req.get('name_variant')
+        )
+    elif req.get('action_type') == 'UPDATE':
+        updates = []
+        params = {"sid": req.get('staff_id')}
+        for field in ['first_name', 'surname', 'name_official', 'name_variant', 'officer_type', 'business_unit', 'email', 'phone_number']:
+            if req.get(field):
+                updates.append(f"{field} = :{field}")
+                params[field] = req.get(field)
+                
+        em = req.get('email', '')
+        if em:
+            updates.append("username = :uname")
+            params['uname'] = em.split('@')[0]
+
+        if updates and params['sid']:
+            with engine.begin() as conn:
+                conn.execute(text(f"UPDATE staff SET {', '.join(updates)} WHERE staff_id = :sid"), params)
+                
+    staff_repo.update_pending_profile_status(req_id, 'APPROVED')
+    return jsonify({'success': True, 'message': 'Profile request approved.'})
+
+@app.route('/api/staff/reject/<int:req_id>', methods=['POST'])
+@login_required
+def reject_pending_profile(req_id):
+    if session['user'].get('role') != 'Admin':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    staff_repo.update_pending_profile_status(req_id, 'REJECTED')
+    return jsonify({'success': True, 'message': 'Profile request rejected.'})
+
+@app.route('/admin/staff/template')
+@login_required
+def download_staff_template():
+    if session['user'].get('role') != 'Admin':
+        return redirect(url_for('index'))
+    csv_data = "staff_id,username,first_name,surname,name_official,name_variant,email,phone_number,officer_type,business_unit,role\n"
+    return Response(
+        csv_data,
+        mimetype="text/csv",
+        headers={"Content-disposition": "attachment; filename=staff_upload_template.csv"}
+    )
+
+@app.route('/api/admin/staff/create', methods=['POST'])
+@login_required
+def admin_create_staff():
+    if session['user'].get('role') != 'Admin':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+        
+    data = request.get_json()
+    sid = str(data.get('staff_id', '')).strip()
+    uname = str(data.get('username', '')).strip()
+    if not uname or not sid:
+        return jsonify({'success': False, 'message': 'Username and Staff ID are required.'}), 400
+        
+    fname = str(data.get('first_name', '')).strip()
+    sname = str(data.get('surname', '')).strip()
+    no = f"{fname} {sname}".strip()
+    em = str(data.get('email', '')).strip()
+    ph = str(data.get('phone_number', '')).strip()
+    ot = str(data.get('officer_type', '')).strip()
+    bu = str(data.get('business_unit', '')).strip()
+    r = str(data.get('role', 'User')).strip()
+    
+    # Default password is the staff ID
+    phash = SecurityManager.hash_password(sid)
+    
+    try:
+        with engine.begin() as conn:
+            query = text("""
+                INSERT INTO staff (staff_id, username, first_name, surname, name_official, email, phone_number, officer_type, business_unit, role, password_hash, sync_status)
+                VALUES (:sid, :uname, :fname, :sname, :no, :em, :ph, :ot, :bu, :r, :phash, 'SYNCED')
+                ON DUPLICATE KEY UPDATE
+                first_name=VALUES(first_name), surname=VALUES(surname), name_official=VALUES(name_official),
+                email=VALUES(email), phone_number=VALUES(phone_number), officer_type=VALUES(officer_type), 
+                business_unit=VALUES(business_unit), role=VALUES(role), password_hash=VALUES(password_hash)
+            """)
+            conn.execute(query, {
+                'sid': sid, 'uname': uname, 'fname': fname, 'sname': sname, 'no': no,
+                'em': em, 'ph': ph, 'ot': ot, 'bu': bu, 'r': r, 'phash': phash
+            })
+        return jsonify({'success': True, 'message': 'Staff registered successfully.'})
+    except Exception as e:
+        logger.error(f"Failed to create single staff record: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': f'Error creating staff: {str(e)}'}), 500
+
+@app.route('/api/admin/staff/all', methods=['GET'])
+@login_required
+def admin_get_all_staff():
+    if session['user'].get('role') != 'Admin':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    staff_list = staff_repo.get_all_staff_detailed()
+    return jsonify({'success': True, 'data': staff_list})
+
+@app.route('/api/admin/staff/update/<int:user_id>', methods=['POST'])
+@login_required
+def admin_update_staff(user_id):
+    if session['user'].get('role') != 'Admin':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+        
+    data = request.get_json()
+    sid = str(data.get('staff_id', '')).strip()
+    if not sid:
+        return jsonify({'success': False, 'message': 'Staff ID is required.'}), 400
+        
+    fname = str(data.get('first_name', '')).strip()
+    sname = str(data.get('surname', '')).strip()
+    no = f"{fname} {sname}".strip()
+    em = str(data.get('email', '')).strip()
+    ph = str(data.get('phone_number', '')).strip()
+    ot = str(data.get('officer_type', '')).strip()
+    bu = str(data.get('business_unit', '')).strip()
+    r = str(data.get('role', 'User')).strip()
+    
+    uname = em.split('@')[0] if em else None
+    
+    updates = []
+    params = {'uid': user_id, 'sid': sid, 'uname': uname, 'fname': fname, 'sname': sname, 'no': no, 'em': em, 'ph': ph, 'ot': ot, 'bu': bu, 'r': r}
+    
+    # Check if we should update password
+    new_pwd = data.get('password')
+    if new_pwd:
+        params['phash'] = SecurityManager.hash_password(new_pwd)
+        updates.append("password_hash = :phash")
+        
+    try:
+        with engine.begin() as conn:
+            query = text(f"""
+                UPDATE staff SET 
+                staff_id = :sid, username = :uname, first_name = :fname, surname = :sname, 
+                name_official = :no, email = :em, phone_number = :ph, 
+                officer_type = :ot, business_unit = :bu, role = :r
+                {", " + ", ".join(updates) if updates else ""}
+                WHERE id = :uid
+            """)
+            conn.execute(query, params)
+        return jsonify({'success': True, 'message': 'Staff updated successfully.'})
+    except Exception as e:
+        logger.error(f"Failed to update staff record: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': f'Error updating staff: {str(e)}'}), 500
+
+@app.route('/api/staff/bulk-upload', methods=['POST'])
+@login_required
+def bulk_upload_staff():
+    if session['user'].get('role') != 'Admin':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': 'No file part'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'message': 'No selected file'}), 400
+        
+    if file:
+        import pandas as pd
+        try:
+            if file.filename.endswith('.csv'):
+                df = pd.read_csv(file)
+            else:
+                df = pd.read_excel(file)
+                
+            df = df.fillna('')
+            count = 0
+            with engine.begin() as conn:
+                for _, row in df.iterrows():
+                    sid = str(row.get('staff_id', '')).strip()
+                    em = str(row.get('email', '')).strip()
+                    uname = em.split('@')[0] if em else None
+                    
+                    if not sid: continue
+                    
+                    fname = str(row.get('first_name', '')).strip()
+                    sname = str(row.get('surname', '')).strip()
+                    no = str(row.get('name_official', '')).strip()
+                    nv = str(row.get('name_variant', '')).strip()
+                    ph = str(row.get('phone_number', '')).strip()
+                    ot = str(row.get('officer_type', '')).strip()
+                    bu = str(row.get('business_unit', '')).strip()
+                    r = str(row.get('role', 'User')).strip()
+                    
+                    default_pwd = sid if sid else uname
+                    phash = SecurityManager.hash_password(default_pwd)
+                    
+                    query = text("""
+                        INSERT INTO staff (staff_id, username, first_name, surname, name_official, name_variant, email, phone_number, officer_type, business_unit, role, password_hash, sync_status)
+                        VALUES (:sid, :uname, :fname, :sname, :no, :nv, :em, :ph, :ot, :bu, :r, :phash, 'SYNCED')
+                        ON DUPLICATE KEY UPDATE
+                        username=IF(VALUES(username) IS NOT NULL, VALUES(username), username),
+                        first_name=IF(VALUES(first_name) != '', VALUES(first_name), first_name),
+                        surname=IF(VALUES(surname) != '', VALUES(surname), surname),
+                        name_official=IF(VALUES(name_official) != '', VALUES(name_official), name_official),
+                        name_variant=IF(VALUES(name_variant) != '', VALUES(name_variant), name_variant),
+                        email=IF(VALUES(email) != '', VALUES(email), email),
+                        phone_number=IF(VALUES(phone_number) != '', VALUES(phone_number), phone_number),
+                        officer_type=IF(VALUES(officer_type) != '', VALUES(officer_type), officer_type),
+                        business_unit=IF(VALUES(business_unit) != '', VALUES(business_unit), business_unit),
+                        role=IF(VALUES(role) != '', VALUES(role), role)
+                    """)
+                    conn.execute(query, {
+                        'sid': sid, 'uname': uname, 'fname': fname, 'sname': sname, 'no': no, 'nv': nv,
+                        'em': em, 'ph': ph, 'ot': ot, 'bu': bu, 'r': r, 'phash': phash
+                    })
+                    count += 1
+            return jsonify({'success': True, 'message': f'Successfully uploaded {count} staff records.'})
+        except Exception as e:
+            return jsonify({'success': False, 'message': f'Error processing file: {str(e)}'}), 500
+
 @app.route('/admin/upload-tables', methods=['GET', 'POST'])
 @login_required
 def admin_upload_tables():
@@ -530,6 +834,445 @@ def api_account_dashboard(account_number):
     except Exception as e:
         logger.error(f"Account dashboard error for {account_number}: {e}", exc_info=True)
         return jsonify({"error": "An internal error occurred while retrieving account details."}), 500
+
+from reportlab.pdfgen import canvas as pdf_canvas
+
+class WatermarkCanvas(pdf_canvas.Canvas):
+    def showPage(self):
+        from reportlab.lib import colors
+        self.saveState()
+        self.setFont('Helvetica-Bold', 60)
+        self.setFillColor(colors.HexColor('#CCCCCC'))
+        try:
+            self.setFillAlpha(0.35)
+        except AttributeError:
+            pass
+        self.translate(306, 396)
+        self.rotate(45)
+        self.drawCentredString(0, 0, "SAMPLE")
+        self.restoreState()
+        super().showPage()
+
+@app.route('/api/account/soa/<account_number>')
+@login_required
+def api_account_soa(account_number):
+    try:
+        # Enforce Vendor role data isolation at the lookup boundary
+        if session['user']['role'] == 'Vendor':
+            sql = text("SELECT account_officer FROM customers WHERE account_number = :acc")
+            with engine.connect() as conn:
+                row = conn.execute(sql, {"acc": account_number}).fetchone()
+            if not row or row[0] != session['user']['username']:
+                return jsonify({"error": "Access denied. This account is not assigned to your agency."}), 403
+
+        # Fetch demographics and financials using AccountService
+        data = account_service.get_account_financials(account_number, session['user']['username'], session['user']['role'], force_online=True)
+        if not data:
+            return jsonify({"error": "Account not found"}), 404
+
+        acc = data['account']
+        fin = data['financials']
+
+        # Query database for detailed discount and adjustment entries with dates
+        with engine.connect() as conn:
+            discounts_raw = conn.execute(text("""
+                SELECT discounted_amount, date_applied, date_approved, user_who_approved, status 
+                FROM discounts WHERE account_number = :acc
+            """), {"acc": account_number}).fetchall()
+            
+            adjustments_raw = conn.execute(text("""
+                SELECT adjustment_amount, date_applied, date_approved, user_who_approved_adjustment, status, remark 
+                FROM adjustments WHERE account_number = :acc
+            """), {"acc": account_number}).fetchall()
+            
+            # Fetch payments details
+            payments_raw = conn.execute(text("""
+                SELECT date_of_payment, amount_paid, payment_source 
+                FROM all_payments WHERE account_number = :acc
+            """), {"acc": account_number}).fetchall()
+
+        def normalize_date(d):
+            if d is None:
+                return datetime(2000, 1, 1)
+            if isinstance(d, datetime):
+                return d
+            if type(d).__name__ == 'date':
+                return datetime(d.year, d.month, d.day)
+            if type(d).__name__ == 'Timestamp':
+                return d.to_pydatetime()
+            if isinstance(d, str):
+                for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%d-%m-%Y %H:%M:%S', '%d-%m-%Y'):
+                    try:
+                        return datetime.strptime(d.strip()[:19], fmt)
+                    except:
+                        pass
+            return datetime(2000, 1, 1)
+
+        # Build chronological ledger
+        setup_dt = normalize_date(acc.get('setup_date'))
+        initial_debt_row = {
+            "date": setup_dt,
+            "description": "Initial Debt (at Deactivation)",
+            "details": "--",
+            "amount": float(acc.get('closing_balance') or 0.0),
+            "status": "Approved",
+            "impact": float(acc.get('closing_balance') or 0.0)
+        }
+
+        transactions = []
+
+        # Process payments
+        for p in payments_raw:
+            dop = normalize_date(p[0])
+            transactions.append({
+                "date": dop,
+                "description": "Payments" if str(p[2]).lower() == 'collection' else f"Payment ({p[2]})",
+                "details": f"Source: {p[2]}",
+                "amount": float(p[1] or 0.0),
+                "status": "Approved",
+                "impact": -float(p[1] or 0.0)
+            })
+
+        # Process discounts
+        for d in discounts_raw:
+            amt = float(d[0] or 0.0)
+            date_app = normalize_date(d[2] or d[1])
+            approver = str(d[3]).lower() if d[3] else ""
+            status = str(d[4]).lower() if d[4] else ""
+            val_status = validation_service.validate_transaction('discount', amt, approver, status)
+            
+            desc = "Discount (Approved)" if val_status == 'valid' else ("Discount (Rejected)" if val_status == 'rejected' else "Discount (Pending)")
+            impact = -amt if val_status == 'valid' else 0.0
+            status_label = "Approved" if val_status == 'valid' else ("Rejected" if val_status == 'rejected' else "Pending")
+            
+            transactions.append({
+                "date": date_app,
+                "description": desc,
+                "details": f"Approver: {d[3] or '--'}",
+                "amount": amt,
+                "status": status_label,
+                "impact": impact
+            })
+
+        # Process adjustments
+        for a in adjustments_raw:
+            amt = float(a[0] or 0.0)
+            date_app = normalize_date(a[2] or a[1])
+            approver = str(a[3]).lower() if a[3] else ""
+            status = str(a[4]).lower() if a[4] else ""
+            remark = str(a[5]) if a[5] else ""
+            val_status = validation_service.validate_transaction('adjustment', amt, approver, status)
+            
+            desc = "Adjustment (Approved)" if val_status == 'valid' else ("Adjustment (Rejected)" if val_status == 'rejected' else "Adjustment (Pending)")
+            impact = -amt if val_status == 'valid' else 0.0
+            status_label = "Approved" if val_status == 'valid' else ("Rejected" if val_status == 'rejected' else "Pending")
+            
+            transactions.append({
+                "date": date_app,
+                "description": desc,
+                "details": f"Remark: {remark}" if remark else f"Approver: {a[3] or '--'}",
+                "amount": amt,
+                "status": status_label,
+                "impact": impact
+            })
+
+        # Sort chronological transactions
+        transactions.sort(key=lambda t: t['date'])
+        ledger = [initial_debt_row] + transactions
+
+        # Compute running balance
+        r_bal = 0.0
+        for entry in ledger:
+            r_bal += entry['impact']
+            entry['running_balance'] = r_bal
+
+        # Build PDF using ReportLab
+        from reportlab.lib.pagesizes import letter
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+        story = []
+
+        styles = getSampleStyleSheet()
+        
+        # Register Arial fonts if available (supports Naira ₦ character on Windows)
+        font_name = 'Helvetica'
+        font_bold_name = 'Helvetica-Bold'
+        font_italic_name = 'Helvetica-Oblique'
+        
+        try:
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+            import os
+            arial_path = r"C:\Windows\Fonts\arial.ttf"
+            arial_bold_path = r"C:\Windows\Fonts\arialbd.ttf"
+            arial_italic_path = r"C:\Windows\Fonts\ariali.ttf"
+            if os.path.exists(arial_path) and os.path.exists(arial_bold_path):
+                pdfmetrics.registerFont(TTFont('Arial', arial_path))
+                pdfmetrics.registerFont(TTFont('Arial-Bold', arial_bold_path))
+                font_name = 'Arial'
+                font_bold_name = 'Arial-Bold'
+                if os.path.exists(arial_italic_path):
+                    pdfmetrics.registerFont(TTFont('Arial-Italic', arial_italic_path))
+                    font_italic_name = 'Arial-Italic'
+                else:
+                    font_italic_name = 'Arial'
+        except Exception as e:
+            logger.warning(f"Failed to register Arial fonts: {e}")
+            
+        curr = '₦' if font_name == 'Arial' else 'N'
+        
+        # Color codes
+        ie_pink = colors.HexColor('#E00C7E')
+        text_dark = colors.HexColor('#1E293B')
+        text_muted = colors.HexColor('#64748B')
+        success_green = colors.HexColor('#10B981')
+        danger_red = colors.HexColor('#EF4444')
+
+        title_style = ParagraphStyle(
+            'TitleStyle',
+            parent=styles['Heading1'],
+            fontName=font_bold_name,
+            fontSize=20,
+            textColor=ie_pink,
+            spaceAfter=2
+        )
+        subtitle_style = ParagraphStyle(
+            'SubtitleStyle',
+            parent=styles['Normal'],
+            fontName=font_name,
+            fontSize=9,
+            textColor=text_muted,
+            spaceAfter=10
+        )
+        label_style = ParagraphStyle(
+            'LabelStyle',
+            parent=styles['Normal'],
+            fontName=font_bold_name,
+            fontSize=9,
+            textColor=text_muted
+        )
+        value_style = ParagraphStyle(
+            'ValueStyle',
+            parent=styles['Normal'],
+            fontName=font_name,
+            fontSize=9,
+            textColor=text_dark
+        )
+        th_style = ParagraphStyle(
+            'THStyle',
+            parent=styles['Normal'],
+            fontName=font_bold_name,
+            fontSize=9,
+            textColor=colors.white
+        )
+        td_style = ParagraphStyle(
+            'TDStyle',
+            parent=styles['Normal'],
+            fontName=font_name,
+            fontSize=8,
+            textColor=text_dark
+        )
+        td_bold_style = ParagraphStyle(
+            'TDBoldStyle',
+            parent=styles['Normal'],
+            fontName=font_bold_name,
+            fontSize=8,
+            textColor=text_dark
+        )
+        card_title_style = ParagraphStyle(
+            'CardTitle',
+            parent=styles['Normal'],
+            fontName=font_bold_name,
+            fontSize=9,
+            textColor=text_muted,
+            alignment=1
+        )
+        card_val_style = ParagraphStyle(
+            'CardVal',
+            parent=styles['Normal'],
+            fontName=font_bold_name,
+            fontSize=12,
+            textColor=text_dark,
+            alignment=1
+        )
+
+        # 1. Header (Logo + Title)
+        logo_path = os.path.join(app.root_path, 'static', 'ie_logo.png')
+        header_data = []
+        if os.path.exists(logo_path):
+            img = Image(logo_path, width=50, height=40)
+            header_data.append([img, [
+                Paragraph("IKEJA ELECTRIC", title_style),
+                Paragraph("<b>STATEMENT OF ACCOUNT</b>", ParagraphStyle('SubTitle', fontName=font_bold_name, fontSize=12, textColor=text_dark)),
+                Paragraph("Debt Management and Control Department", subtitle_style)
+            ]])
+        else:
+            header_data.append(["", [
+                Paragraph("IKEJA ELECTRIC", title_style),
+                Paragraph("<b>STATEMENT OF ACCOUNT</b>", ParagraphStyle('SubTitle', fontName=font_bold_name, fontSize=12, textColor=text_dark)),
+                Paragraph("Debt Management and Control Department", subtitle_style)
+            ]])
+        
+        header_table = Table(header_data, colWidths=[70, 470])
+        header_table.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+        ]))
+        story.append(header_table)
+
+        # 2. Separator line
+        sep_table = Table([[""]], colWidths=[540])
+        sep_table.setStyle(TableStyle([
+            ('LINEBELOW', (0,0), (-1,-1), 2, ie_pink),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 15),
+        ]))
+        story.append(sep_table)
+        story.append(Spacer(1, 10))
+
+        # 3. Demographics block
+        dem_data = [
+            [Paragraph("<b>Customer Name:</b>", label_style), Paragraph(str(acc.get('account_name') or '--').upper(), value_style), Paragraph("<b>Account Number:</b>", label_style), Paragraph(str(acc.get('account_number') or '--'), value_style)],
+            [Paragraph("<b>Service Address:</b>", label_style), Paragraph(str(acc.get('account_address') or '--'), value_style), Paragraph("<b>Business Unit:</b>", label_style), Paragraph(str(acc.get('business_unit') or '--'), value_style)],
+            [Paragraph("<b>Undertaking:</b>", label_style), Paragraph(str(acc.get('undertaking') or '--'), value_style), Paragraph("<b>Account Officer:</b>", label_style), Paragraph(str(acc.get('account_officer') or '--'), value_style)],
+            [Paragraph("<b>DT Name:</b>", label_style), Paragraph(str(acc.get('dt_name') or '--'), value_style), Paragraph("<b>Feeder Band:</b>", label_style), Paragraph(str(acc.get('feeder') or '--'), value_style)]
+        ]
+        
+        dem_table = Table(dem_data, colWidths=[100, 170, 100, 170])
+        dem_table.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F8FAFC')),
+            ('PADDING', (0,0), (-1,-1), 6),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),
+        ]))
+        story.append(dem_table)
+        story.append(Spacer(1, 15))
+
+        # 4. Financial Summary Grid
+        pp_color = '#10B981' if fin.get('payment_plan_status') == 'Active' else ('#EF4444' if fin.get('payment_plan_status') == 'Defaulted' else '#64748B')
+        
+        summary_cards_data = [
+            [
+                Paragraph("Total Debt", card_title_style),
+                Paragraph("Total Payments", card_title_style),
+                Paragraph("Outstanding Balance", card_title_style),
+                Paragraph("Payment Plan / Status", card_title_style)
+            ],
+            [
+                Paragraph(f"{curr}{float(acc.get('closing_balance') or 0):,.2f}", card_val_style),
+                Paragraph(f"{curr}{float(fin.get('total_payments') or 0):,.2f}", card_val_style),
+                Paragraph(f"<font color='#EF4444'>{curr}{float(fin.get('outstanding_balance') or 0):,.2f}</font>", card_val_style),
+                Paragraph(f"{fin.get('payment_plan', 'No')} / <font color='{pp_color}'><b>{str(fin.get('payment_plan_status', 'No Plan')).upper()}</b></font>", card_val_style)
+            ]
+        ]
+        
+        summary_table = Table(summary_cards_data, colWidths=[135, 135, 135, 135])
+        summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F1F5F9')),
+            ('BACKGROUND', (0,1), (-1,1), colors.HexColor('#F8FAFC')),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#CBD5E1')),
+            ('PADDING', (0,0), (-1,-1), 8),
+        ]))
+        story.append(summary_table)
+        story.append(Spacer(1, 20))
+
+        # 5. Ledger Title
+        story.append(Paragraph("<b>TRANSACTION HISTORY LEDGER</b>", ParagraphStyle('TableTitle', fontName=font_bold_name, fontSize=10, textColor=ie_pink, spaceAfter=8)))
+
+        # 6. Ledger Table
+        table_headers = [
+            Paragraph("Date", th_style),
+            Paragraph("Description", th_style),
+            Paragraph(f"Amount ({curr})", th_style),
+            Paragraph("Status", th_style),
+            Paragraph(f"Outstanding ({curr})", th_style)
+        ]
+        
+        ledger_table_data = [table_headers]
+        
+        for entry in ledger:
+            date_str = entry['date'].strftime('%Y-%m-%d') if isinstance(entry['date'], datetime) else str(entry['date'])
+            amt_str = f"{curr}{entry['amount']:,.2f}"
+            bal_str = f"{curr}{entry['running_balance']:,.2f}"
+            
+            status_style = td_bold_style if entry['status'] == 'Approved' else ParagraphStyle('StatusStyle', parent=td_bold_style, textColor=danger_red if entry['status'] == 'Rejected' else colors.HexColor('#F59E0B'))
+            
+            impact_sign = "-" if entry['impact'] < 0 else ("+" if entry['impact'] > 0 else "")
+            formatted_amt = f"{impact_sign} {amt_str}" if impact_sign else amt_str
+            
+            row = [
+                Paragraph(date_str, td_style),
+                Paragraph(entry['description'], td_bold_style),
+                Paragraph(formatted_amt, td_bold_style),
+                Paragraph(entry['status'], status_style),
+                Paragraph(bal_str, td_bold_style)
+            ]
+            ledger_table_data.append(row)
+
+        ledger_table = Table(ledger_table_data, colWidths=[80, 180, 100, 80, 100])
+        
+        t_style = [
+            ('BACKGROUND', (0,0), (-1,0), ie_pink),
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0,0), (-1,0), 6),
+            ('TOPPADDING', (0,0), (-1,0), 6),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),
+            ('PADDING', (0,1), (-1,-1), 6),
+        ]
+        
+        for i in range(1, len(ledger_table_data)):
+            if i % 2 == 0:
+                t_style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor('#F8FAFC')))
+                
+        ledger_table.setStyle(TableStyle(t_style))
+        story.append(ledger_table)
+        story.append(Spacer(1, 15))
+
+        warning_bold_style = ParagraphStyle(
+            'WarningBold',
+            parent=styles['Normal'],
+            fontName=font_bold_name,
+            fontSize=10,
+            textColor=danger_red,
+            alignment=1,
+            spaceAfter=15
+        )
+        story.append(Paragraph("<b>NOT FOR CUSTOMERS, FOR OFFICIAL USE ONLY</b>", warning_bold_style))
+        story.append(Spacer(1, 10))
+
+        # 7. Footnotes and Disclaimers
+        footer_style = ParagraphStyle(
+            'FooterNotes',
+            parent=styles['Normal'],
+            fontName=font_italic_name,
+            fontSize=7,
+            textColor=text_muted,
+            alignment=1
+        )
+        story.append(Paragraph("This is an official document generated by the Ikeja Electric Debt Management & Recovery Portal.<br/>Only approved adjustments and discounts are applied towards the outstanding balance calculation.", footer_style))
+
+        # Build document with watermark on top
+        doc.build(story, canvasmaker=WatermarkCanvas)
+        buffer.seek(0)
+        
+        # Log activity
+        staff_repo.log_activity(session['user']['username'], "GENERATE_SOA_PDF", f"Generated statement for account {account_number}", event_type='MINOR')
+
+        return send_file(
+            buffer,
+            as_attachment=False,
+            download_name=f"SOA_{account_number}.pdf",
+            mimetype="application/pdf"
+        )
+    except Exception as e:
+        logger.error(f"Error generating statement of account PDF for {account_number}: {e}", exc_info=True)
+        return jsonify({"error": "An error occurred while generating the PDF statement of account."}), 500
 
 @app.route('/api/account/update-start-date', methods=['POST'])
 @login_required
@@ -958,6 +1701,11 @@ def api_performance_rank():
             
         if df.empty:
             return jsonify({"officers": [], "units": []})
+            
+        df['account_officer'] = df['account_officer'].fillna('Unknown')
+        df['business_unit'] = df['business_unit'].fillna('Unknown')
+        df['officer_type'] = df['officer_type'].fillna('Unknown')
+        df['recovery'] = df['recovery'].fillna(0.0)
 
         # --- 1. Recovery Officer Aggregation (Always group by name) ---
         def aggregate_officer(group):

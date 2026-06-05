@@ -7,9 +7,9 @@ class StaffService:
     def get_all_staff(self):
         return self.repo.get_all_staff()
 
-    def add_staff(self, username, password, full_name, role):
+    def add_staff(self, username, password, first_name, surname, role):
         # In a real app, you'd hash the password here
-        return self.repo.add_staff(username, password, full_name, role)
+        return self.repo.add_staff(username, password, first_name, surname, role)
 
     def delete_staff(self, staff_id):
         return self.repo.delete_staff(staff_id)

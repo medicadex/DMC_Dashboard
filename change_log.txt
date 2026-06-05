@@ -341,6 +341,7 @@ Date: 2026-05-29
 Developer: Antigravity
 Summary: Vendor Job Form Dropdown UI Legibility Fix
 
+
 UI/UX:
 - Fixed an issue where the background color of dropdowns and active accordion steps in the job form creator was hardcoded to a dark color, rendering text illegible in light mode.
 - Replaced the static dark rgba color with dynamic CSS variables `var(--card-bg)` and `var(--bg-color)` for `accordion-step.active` and `accordion-step.locked`, ensuring proper contrast regardless of the active theme (light or dark).
@@ -354,3 +355,222 @@ UI/UX:
 - Rearranged the job form dropdown filter steps into logical rows.
 - Implemented matrix column distribution: Row 1 (BU, Undertaking, Officer Name), Row 2 (Feeder, DT Name, Job Form Type), and Row 3 (Columns Configuration).
 
+--------------------------------------------------
+Date: 2026-06-03
+Developer: Antigravity
+Summary: Payment Listing Redirect & PDF Statement of Account (SOA) Generation
+
+Architecture:
+- Added Flask API endpoint `/api/account/soa/<account_number>` to dynamically query databases and compile custom financial Statement of Account PDFs using ReportLab.
+- Integrated robust date normalization utility in the backend to cleanly parse and sort heterogeneous payment, discount, and adjustment timestamps chronologically.
+
+UI/UX:
+- Added an Action column with an external link redirect icon in the Payment Listing tab (`payments.html`) to easily inspect customers in the Account Lookup dashboard.
+- Redesigned the Account Lookup results header banner (`dashboard.html`) to include a premium "Download Statement" action button.
+- Integrated high-performance client-side event binding in the Account Dashboard to trigger the Statement of Account PDF download directly.
+
+--------------------------------------------------
+Date: 2026-06-03
+Developer: Antigravity
+Summary: Statement of Account (SOA) Watermarking, Confirmation Warning, and Inline Preview
+
+Architecture:
+- Implemented a custom canvasmaker class `WatermarkCanvas` in app.py to overlay a semi-transparent diagonal "SAMPLE" watermark on top of PDF table elements.
+- Registered Windows TrueType Arial and Arial-Bold fonts to support rendering the Naira sign (₦) inside ReportLab PDFs, with safe fallback to NGN/N/Helvetica if unavailable.
+- Changed the PDF response in app.py to return with as_attachment=False so browsers render it as an inline preview instead of forcing a direct download.
+
+UI/UX:
+- Updated the "Download Statement" button text in templates/dashboard.html to "Preview / Download Statement" to align with preview functionality.
+- Added a JavaScript confirmation warning popup to alert internal users that the Statement of Account is confidential and must not be shared with, shown to, or photographed for customers before displaying the preview.
+- Configured the button to open the inline PDF preview in a new window/tab using window.open upon confirmation.
+
+--------------------------------------------------
+Date: 2026-06-03
+Developer: Antigravity
+Summary: Statement of Account (SOA) Formatting Adjustments and Official Disclaimer
+
+Architecture:
+- Removed the Reference/Details column from the SOA ledger table headers and row layout, redistributing usable page width to the remaining 5 columns.
+- Changed default ledger payment description labels from "POS Payment" to "Payments".
+- Relabeled the "Initial Closing Balance" summary card header to "Total Debt", keeping the ledger table description as "Initial Debt (at Deactivation)".
+- Increased the watermark diagonal opacity from 0.20 to 0.35 in `WatermarkCanvas` to improve legibility on top of colored table components.
+
+UI/UX:
+- Added a bold, red disclaimer paragraph ("NOT FOR CUSTOMERS, FOR OFFICIAL USE ONLY") directly below the transaction history ledger table on the PDF statement.
+
+--------------------------------------------------
+Date: 2026-06-04
+Developer: Antigravity
+Summary: Comprehensive Staff Profile Management & Approval Workflow
+
+Architecture:
+- Created `staff_pending_updates` table to stage profile creations and updates.
+- Added `StaffRepository` methods for creating, fetching, and approving/rejecting pending profiles.
+- Integrated `/api/staff/request-profile`, `/api/staff/approve`, `/api/staff/reject`, and bulk upload endpoints in `app.py`.
+
+UI/UX:
+- Redesigned `login.html` with a tabbed interface (Login / Create Profile) to allow self-service registration.
+- Injected a "My Profile" modal in `base.html` enabling users to request updates to their own profiles.
+- Developed `admin_staff_management.html` dashboard allowing administrators to review, approve, and reject pending updates, as well as perform bulk staff uploads using a downloadable template.
+
+Security & Data Integrity:
+- Enforced admin-only access on approval and bulk upload routes.
+- Required new users to set passwords during profile creation.
+- Restricted Staff ID modifications; only admins can edit Staff IDs.
+- Mandated explicit admin approval for all profile updates before merging into the main `staff` table.
+
+--------------------------------------------------
+Date: 2026-06-04
+Developer: Antigravity
+Summary: Premium UI Redesign for Staff Management & Single Staff Registration
+
+Architecture:
+- Implemented a new secure backend API endpoint /api/admin/staff/create in pp.py enabling administrators to instantly provision single staff profiles directly onto the main database.
+- Integrated INSERT ... ON DUPLICATE KEY UPDATE logic on this endpoint for robust creation and inline updating.
+- Automatically hashes the user's staff_id to serve as their default security password.
+
+UI/UX:
+- Completely redesigned the Admin Staff Management interface (dmin_staff_management.html) with a premium, frameless aesthetic featuring curated color palettes, soft gradients, and modern typography.
+- Re-architected the table view (.premium-table) to eliminate the squished layout, introducing spacious cell padding, text alignment, border radiuses, and dynamic hover highlights (	r:hover).
+- Replaced standard HTML buttons with customized action triggers featuring scale animations on hover.
+- Embedded a new "Register Single Staff" tab natively inside the dashboard, bypassing the pending approvals queue when an admin needs to rapidly onboard personnel.
+- Designed dynamic status badges (CREATE vs UPDATE) using soft RGBA backgrounds and crisp color-coding for rapid visual scanning of the Pending Requests queue.
+
+--------------------------------------------------
+Date: 2026-06-04
+Developer: Antigravity
+Summary: Administrative 'Modify User' Feature & Tab Re-architecture
+
+Architecture:
+- Implemented get_all_staff_detailed in staff_repo.py to retrieve the complete user dataset.
+- Added API endpoint /api/admin/staff/all to fetch the global user directory securely.
+- Added API endpoint /api/admin/staff/update/<id> allowing granular inline updates of any existing user profile, including password resets and role escalation.
+
+UI/UX:
+- Re-architected the Staff Management tabs to match the logical schema: "Pending Requests", "Create User", "Modify User".
+- Grouped "Single Registration" and "Bulk Upload" into seamless sub-tabs beneath the "Create User" view.
+- Built a comprehensive "Modify User" tabular view featuring all active staff.
+- Built a dynamic "Modify Staff Profile" modal overlay to rapidly edit existing accounts and reset credentials directly from the portal.
+
+--------------------------------------------------
+Date: 2026-06-04
+Developer: Antigravity
+Summary: Database Schema Cleanup & Refactoring
+
+Database:
+- Dropped the redundant 'full_name' column from the 'staff' table to normalize the schema.
+
+Architecture:
+- Refactored 'staff_repo.py' and 'staff_service.py' to use 'first_name' and 'surname' directly in SELECT and INSERT queries.
+- Updated 'app.py' pending profile approval logic to map to 'first_name' and 'surname'.
+- Enhanced 'auth_service.py' to dynamically synthesize 'full_name' for the session context, ensuring zero breaking changes to frontend templates (like base.html and home.html).
+--------------------------------------------------
+
+--------------------------------------------------
+Date: 2026-06-04
+Developer: Antigravity
+Summary: Database Schema Refactoring for Staff ID Unique Constraint & Auto-Calculated Usernames
+
+Architecture:
+- Dropped UNIQUE constraint from username and added UNIQUE constraint to staff_id in the staff table.
+- Updated update_schema script to calculate legacy usernames from email attributes.
+
+Backend Logic:
+- Updated app.py (bulk_upload_staff, admin_update_staff, approve_pending_profile) to automatically extract the username using email.split('@')[0].
+- Removed explicit username logic from single user creation.
+
+UI/UX:
+- Removed the Username input fields from the Add Staff and Modify Staff modals in admin_staff_management.html.
+
+--------------------------------------------------
+Date: 2026-06-04
+Developer: Antigravity
+Summary: Bulk Upload Deduplication Persistence
+
+Backend Logic:
+- Modified the 'ON DUPLICATE KEY UPDATE' query in the bulk upload route.
+- Applied SQL IF statements (e.g., IF(VALUES(first_name) != '', VALUES(first_name), first_name)) so that if a cell is left blank in the CSV during an update, the existing data in the database is perfectly preserved instead of being overwritten with empty strings.
+
+--------------------------------------------------
+Date: 2026-06-04
+Developer: Antigravity
+Summary: Pending Staff Update Details UI & Schema Fix
+
+Architecture:
+- Altered staff_pending_updates table to correctly track first_name and surname, which were previously discarded during submission.
+
+Backend Logic:
+- Updated staff_repo.py create_pending_profile to capture and store first_name and surname parameters.
+
+UI/UX:
+- Added a 'View Details' action button to the Awaiting Approval table in the admin UI.
+- Implemented a 'Review Pending Request' modal that automatically compares existing staff profiles with the requested changes.
+- Unmodified fields are hidden, and updated fields are highlighted with strikethrough (old value) and green text (new value).
+
+--------------------------------------------------
+Date: 2026-06-04
+Developer: Antigravity
+Summary: Bugfix - Fetch Staff Data on Demand for Details Modal
+
+UI/UX:
+- Fixed an issue where the Review Pending Request modal would show 'Existing staff record not found' if the admin had not yet loaded the full staff list by visiting the Modify User tab. The modal now automatically fetches the staff data in the background if it hasn't been loaded yet.
+
+--------------------------------------------------
+Date: 2026-06-04
+Developer: Antigravity
+Summary: Bugfix - Admin Approval of New Staff Profile Creation
+
+Architecture:
+- Updated staff_repo.py add_staff method to directly accept and insert staff_id, officer_type, business_unit, name_official, and name_variant into the database.
+
+Backend Logic:
+- Fixed a bug in app.py approve_pending_profile where new profiles were being inserted without a staff_id, causing the subsequent UPDATE query (which relied on staff_id) to fail silently. 
+- The approval process now successfully passes all fields to add_staff in a single atomic transaction, ensuring new staff members are completely provisioned and immediately appear on the staff list.
+
+--------------------------------------------------
+Date: 2026-06-04
+Developer: Antigravity
+Summary: UI/UX - Updated Officer Type Options
+
+UI/UX:
+- Updated the Officer Type dropdown menus across all frontend templates (base.html, login.html, and admin_staff_management.html) to strictly enforce the newly approved options: DMO, Vendor, Team Lead, Specialist, Analyst, and Management.
+
+--------------------------------------------------
+Date: 2026-06-04
+Developer: Antigravity
+Summary: UI/UX - Updated Business Unit Options
+
+UI/UX:
+- Modified the 'Business Unit' dropdown menus across all frontend templates (base.html, login.html, and admin_staff_management.html) to rename 'HQ' to 'CHQ'.
+
+--------------------------------------------------
+Date: 2026-06-04
+Developer: Antigravity
+Summary: Bugfix - Fixed 'Existing staff record not found' error on profile updates
+
+Backend & Frontend Logic:
+- Fixed an issue where a user requesting an update to their profile sent an incomplete payload missing their staff_id. This caused the backend to insert a pending request with a NULL staff_id, making it impossible for the admin to review and approve the request since the system couldn't map the update back to an existing staff record.
+- Updated the javascript payload in base.html to securely attach the user's staff_id from their session.
+- Ran a recovery script to backfill the missing staff_ids for all existing pending update requests so they can be immediately reviewed and approved.
+
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ D a t e :   2 0 2 6 - 0 6 - 0 4 
+ D e v e l o p e r :   A n t i g r a v i t y 
+ S u m m a r y :   B u g f i x   -   R e s o l v e d   M y S Q L   C o n n e c t i o n   T i m e o u t   o n   B u l k   U p l o a d s 
+ 
+ B a c k e n d   ( D a t a b a s e / U p l o a d s ) : 
+ -   R e d u c e d   c h u n k _ s i z e   i n   s e r v i c e s / u p l o a d _ s e r v i c e . p y   f r o m   5 0 0 0   t o   5 0 0   t o   p r e v e n t   M y S Q L   c o n n e c t i o n   t i m e o u t s   ( E r r o r   2 0 1 3 )   d u r i n g   	 o _ s q l   o p e r a t i o n s   w h e n   h a n d l i n g   l a r g e   c u s t o m e r   d a t a s e t s . 
+  
+ 
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ D a t e :   2 0 2 6 - 0 6 - 0 5 
+ D e v e l o p e r :   A n t i g r a v i t y 
+ S u m m a r y :   S e c u r i t y   -   P a s s w o r d   M a n a g e m e n t   I m p l e m e n t a t i o n 
+ 
+ S e c u r i t y   &   U I / U X : 
+ -   A d d e d   v a l i d a t i o n   i n   a p p . p y   t o   r e j e c t   I E   e m a i l   u s e r n a m e s   u p o n   l o g i n . 
+ -   I m p l e m e n t e d   ' F i r s t   L o g i n '   f e a t u r e   t o   p r o m p t   u s e r s   t o   c h a n g e   d e f a u l t   p a s s w o r d s   ( s t a f f _ i d ) . 
+ -   I m p l e m e n t e d   ' C h a n g e   P a s s w o r d '   p r o m p t   w h e n   u s e r s   f a i l   3   l o g i n   a t t e m p t s ,   r e q u i r i n g   s t a f f _ i d   v e r i f i c a t i o n . 
+ -   A d d e d   / a p i / s t a f f / r e s e t - p a s s w o r d - f o r c e d   A P I   r o u t e   t o   s e c u r e l y   h a n d l e   a c c o u n t   r e c o v e r i e s . 
+  
+ 

@@ -37,18 +37,22 @@ class StaffRepository:
         if 'phone_number' in data and data['phone_number']:
             data['phone_number'] = SecurityManager.decrypt_data(data['phone_number'])
             
+        # Backwards compatibility for templates that expect 'full_name'
+        if 'first_name' in data or 'surname' in data:
+            data['full_name'] = f"{data.get('first_name', '')} {data.get('surname', '')}".strip()
+            
         return data
 
     def get_user_by_username(self, username: str):
         with self.engine.connect() as conn:
             # Case-insensitive username lookup using LOWER()
-            query = text("SELECT id, username, staff_id, password_hash, full_name, role, email, last_online_login FROM staff WHERE LOWER(username) = LOWER(:u)")
+            query = text("SELECT id, username, staff_id, password_hash, first_name, surname, role, email, last_online_login FROM staff WHERE LOWER(username) = LOWER(:u)")
             row = conn.execute(query, {"u": username}).fetchone()
             return self._process_user_row(row)
 
     def get_user_by_email(self, email: str):
         with self.engine.connect() as conn:
-            query = text("SELECT id, username, staff_id, password_hash, full_name, role, email, last_online_login FROM staff WHERE email = :e")
+            query = text("SELECT id, username, staff_id, password_hash, first_name, surname, role, email, last_online_login FROM staff WHERE email = :e")
             row = conn.execute(query, {"e": email}).fetchone()
             return self._process_user_row(row)
 
@@ -70,24 +74,36 @@ class StaffRepository:
 
     def get_all_staff(self):
         with self.engine.connect() as conn:
-            return conn.execute(text("SELECT id, username, full_name, role FROM staff")).fetchall()
+            return conn.execute(text("SELECT id, username, first_name, surname, role FROM staff")).fetchall()
 
-    def add_staff(self, username, hashed_pwd, full_name, role, email=None, phone_number=None):
+    def get_all_staff_detailed(self):
+        with self.engine.connect() as conn:
+            rows = conn.execute(text("SELECT id, staff_id, username, first_name, surname, name_official, role, officer_type, business_unit, email, phone_number, last_online_login FROM staff ORDER BY username ASC")).fetchall()
+            return [self._process_user_row(row) for row in rows]
+
+    def add_staff(self, username, hashed_pwd, first_name, surname, role, email=None, phone_number=None,
+                  staff_id=None, officer_type=None, business_unit=None, name_official=None, name_variant=None):
         # Generate transaction ID
         trans_id = str(uuid.uuid4())
         
         try:
             with self.engine.begin() as conn:
                 query = text("""
-                    INSERT INTO staff (username, password_hash, full_name, role, email, phone_number, transaction_id, sync_status)
-                    VALUES (:u, :p, :f, :r, :e, :ph, :tid, 'SYNCED')
+                    INSERT INTO staff (username, password_hash, first_name, surname, role, email, phone_number,
+                                       staff_id, officer_type, business_unit, name_official, name_variant,
+                                       transaction_id, sync_status)
+                    VALUES (:u, :p, :fn, :sn, :r, :e, :ph, :sid, :ot, :bu, :no, :nv, :tid, 'SYNCED')
                 """)
                 conn.execute(query, {
-                    "u": username, "p": hashed_pwd, "f": full_name, "r": role,
-                    "e": email, "ph": phone_number, "tid": trans_id
+                    "u": username, "p": hashed_pwd, "fn": first_name, "sn": surname, "r": role,
+                    "e": email, "ph": phone_number, 
+                    "sid": staff_id, "ot": officer_type, "bu": business_unit, "no": name_official, "nv": name_variant,
+                    "tid": trans_id
                 })
+                return True
         except Exception as e:
             logging.error(f"Failed to push new staff to RDS: {e}")
+            return False
 
     def update_staff_password(self, username, hashed_pwd):
         try:
@@ -109,7 +125,7 @@ class StaffRepository:
     def get_user_full_by_username(self, username: str):
         with self.engine.connect() as conn:
             # Case-insensitive lookup
-            query = text("SELECT id, username, staff_id, password_hash, full_name, role, email, last_online_login FROM staff WHERE LOWER(username) = LOWER(:u)")
+            query = text("SELECT id, username, staff_id, password_hash, first_name, surname, role, email, last_online_login FROM staff WHERE LOWER(username) = LOWER(:u)")
             row = conn.execute(query, {"u": username}).fetchone()
             return self._process_user_row(row)
 
@@ -155,3 +171,53 @@ class StaffRepository:
         with self.engine.connect() as conn:
             query = text("SELECT password_hash FROM password_history WHERE user_id = :user_id ORDER BY created_at DESC LIMIT :limit")
             return [row[0] for row in conn.execute(query, {"user_id": user_id, "limit": limit})]
+
+    def create_pending_profile(self, action_type, data, submitted_by=None):
+        try:
+            with self.engine.begin() as conn:
+                query = text("""
+                    INSERT INTO staff_pending_updates 
+                    (action_type, staff_id, first_name, surname, name_official, name_variant, role, officer_type, username, password_hash, email, phone_number, business_unit, submitted_by)
+                    VALUES (:a, :sid, :fn, :sn, :no, :nv, :r, :ot, :u, :p, :e, :ph, :bu, :sb)
+                """)
+                conn.execute(query, {
+                    "a": action_type,
+                    "sid": data.get("staff_id"),
+                    "fn": data.get("first_name"),
+                    "sn": data.get("surname"),
+                    "no": data.get("name_official"),
+                    "nv": data.get("name_variant"),
+                    "r": data.get("role", "User"),
+                    "ot": data.get("officer_type"),
+                    "u": data.get("username"),
+                    "p": data.get("password_hash"),
+                    "e": data.get("email"),
+                    "ph": data.get("phone_number"),
+                    "bu": data.get("business_unit"),
+                    "sb": submitted_by
+                })
+            return True
+        except Exception as e:
+            logging.error(f"Failed to create pending profile: {e}")
+            return False
+
+    def get_pending_profiles(self):
+        with self.engine.connect() as conn:
+            query = text("SELECT * FROM staff_pending_updates WHERE status = 'PENDING' ORDER BY submitted_at DESC")
+            rows = conn.execute(query).fetchall()
+            return [self._process_user_row(row) for row in rows]
+
+    def get_pending_profile_by_id(self, req_id):
+        with self.engine.connect() as conn:
+            query = text("SELECT * FROM staff_pending_updates WHERE id = :id")
+            row = conn.execute(query, {"id": req_id}).fetchone()
+            return self._process_user_row(row)
+
+    def update_pending_profile_status(self, req_id, status):
+        try:
+            with self.engine.begin() as conn:
+                conn.execute(text("UPDATE staff_pending_updates SET status = :s WHERE id = :id"), {"s": status, "id": req_id})
+            return True
+        except Exception as e:
+            logging.error(f"Failed to update pending profile status: {e}")
+            return False

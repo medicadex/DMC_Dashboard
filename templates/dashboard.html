@@ -29,11 +29,16 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; flex-wrap: wrap; gap: 15px;">
             <h2 id="customerNameHeader" style="margin: 0; font-size: 24px; font-weight: 800; color: var(--text-color);">--</h2>
             
-            <!-- BU, Undertaking, Officer Banner -->
-            <div id="topBanner" style="background: var(--bg-color); border: 1px solid var(--primary-color); border-radius: 8px; padding: 10px 20px; display: flex; gap: 20px; font-weight: 500; color: var(--text-color); font-size: 13px;">
-                <div><span style="color: var(--text-muted); font-size: 11px;">BU:</span> <span id="bannerBU" style="font-weight: 700;">--</span></div>
-                <div><span style="color: var(--text-muted); font-size: 11px;">Undertaking:</span> <span id="bannerUT" style="font-weight: 700;">--</span></div>
-                <div><span style="color: var(--text-muted); font-size: 11px;">Officer:</span> <span id="bannerOfficer" style="font-weight: 700;">--</span></div>
+            <!-- BU, Undertaking, Officer Banner + Download Button -->
+            <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+                <div id="topBanner" style="background: var(--bg-color); border: 1px solid var(--primary-color); border-radius: 8px; padding: 10px 20px; display: flex; gap: 20px; font-weight: 500; color: var(--text-color); font-size: 13px;">
+                    <div><span style="color: var(--text-muted); font-size: 11px;">BU:</span> <span id="bannerBU" style="font-weight: 700;">--</span></div>
+                    <div><span style="color: var(--text-muted); font-size: 11px;">Undertaking:</span> <span id="bannerUT" style="font-weight: 700;">--</span></div>
+                    <div><span style="color: var(--text-muted); font-size: 11px;">Officer:</span> <span id="bannerOfficer" style="font-weight: 700;">--</span></div>
+                </div>
+                <button id="downloadSOABtn" class="btn-download-pdf" disabled style="opacity: 0.5; cursor: not-allowed;" title="This feature is currently inactive">
+                    <i class="fas fa-file-pdf"></i> Preview / Download Statement
+                </button>
             </div>
         </div>
 
@@ -118,6 +123,28 @@
 
     .btn-search:hover {
         background-color: var(--primary-hover);
+    }
+
+    .btn-download-pdf {
+        background-color: var(--success-color);
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .btn-download-pdf:hover {
+        background-color: #059669;
+    }
+
+    :root[data-theme="dark"] .btn-download-pdf:hover {
+        background-color: #0d9488;
     }
 
     .grid-5-col {
@@ -346,6 +373,14 @@
             document.getElementById('bannerBU').innerText = acc.business_unit || '--';
             document.getElementById('bannerUT').innerText = acc.undertaking || '--';
             document.getElementById('bannerOfficer').innerText = acc.account_officer || '--';
+
+            // Bind PDF Download Event
+            document.getElementById('downloadSOABtn').onclick = () => {
+                const message = "WARNING: This Statement of Account (SOA) is strictly confidential and is for internal administrative use only. It must not be issued to, shared with, or photographed for the customer.\n\nClick OK to proceed to preview.";
+                if (confirm(message)) {
+                    window.open(`/api/account/soa/${encodeURIComponent(acc.account_number)}`, '_blank');
+                }
+            };
 
             // Col 1 Demographic
             document.getElementById('col1').innerHTML = `

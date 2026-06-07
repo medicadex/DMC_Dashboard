@@ -199,6 +199,38 @@ def reset_password_forced():
     if success:
         return jsonify({'success': True, 'message': message})
     return jsonify({'success': False, 'message': message}), 400
+@app.route('/api/staff/change-password', methods=['POST'])
+@login_required
+def change_password():
+    data = request.get_json()
+    current_password = data.get('current_password')
+    new_password = data.get('new_password')
+    username = session['user']['username']
+    
+    if not current_password or not new_password:
+        return jsonify({'success': False, 'message': 'All fields are required.'}), 400
+        
+    if len(new_password) < 4:
+        return jsonify({'success': False, 'message': 'New password must be at least 4 characters long.'}), 400
+        
+    user_data = auth_service.login(username, current_password)
+    if not user_data:
+        return jsonify({'success': False, 'message': 'Incorrect current password.'}), 400
+        
+    try:
+        from utils.security import SecurityManager
+        new_hash = SecurityManager.hash_password(new_password)
+        staff_repo.update_staff_password(username, new_hash)
+        
+        session.pop('require_password_change', None)
+        session.modified = True
+        
+        staff_repo.log_activity(username, "PASSWORD_CHANGED", "User changed default password via modal", event_type='MAJOR')
+        
+        return jsonify({'success': True, 'message': 'Password changed successfully!'})
+    except Exception as e:
+        logger.error(f"Error changing password: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
 
 @app.route('/vendor-login', methods=['GET', 'POST'])
 def vendor_login():

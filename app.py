@@ -13,6 +13,7 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, s
 from werkzeug.utils import secure_filename
 from sqlalchemy import text
 import pandas as pd
+import numpy as np
 
 from db_utils import get_db_engine
 
@@ -2277,7 +2278,7 @@ def api_customers_export():
                 res = conn.execute(text("SELECT DISTINCT business_unit FROM customers WHERE account_officer = :v AND business_unit IS NOT NULL AND business_unit != ''"), {"v": session['user']['username']}).fetchall()
                 bus = [r[0] for r in res]
     
-    if not bus or not onames:
+    if not bus or not onames or not otypes:
         return jsonify({"error": "Missing filters"}), 400
 
     try:
@@ -2307,9 +2308,13 @@ def api_customers_export():
                 GROUP BY account_number
             ) lp ON c.account_number = lp.account_number
             LEFT JOIN (
-                SELECT account_number, phone_number 
-                FROM validation 
-                WHERE id IN (SELECT MAX(id) FROM validation GROUP BY account_number)
+                SELECT v1.account_number, v1.phone_number 
+                FROM validation v1
+                INNER JOIN (
+                    SELECT account_number, MAX(id) as max_id 
+                    FROM validation 
+                    GROUP BY account_number
+                ) v2 ON v1.id = v2.max_id
             ) v ON c.account_number = v.account_number
             WHERE c.business_unit IN :bus
             AND c.officer_type IN :otypes
@@ -2335,12 +2340,9 @@ def api_customers_export():
         
         df['Outstanding Balance'] = df['Closing Balance'] - df['Total Payments'] - df['Valid Discount Amount'] - df['Valid Adjustment Amount']
         
-        def get_pp_status(row):
-            # Logic: Payment Plan is 'Yes' if they've paid >= 30% of their debt and still have balance
-            is_pp = (row['Total Payments'] >= 0.3 * row['Closing Balance']) and (row['Outstanding Balance'] > 0)
-            return "Yes" if is_pp else "No"
-
-        df['Current Payment-Plan Status'] = df.apply(get_pp_status, axis=1)
+        # Vectorized payment plan status check (much faster than df.apply)
+        is_pp = (df['Total Payments'] >= 0.3 * df['Closing Balance']) & (df['Outstanding Balance'] > 0)
+        df['Current Payment-Plan Status'] = np.where(is_pp, "Yes", "No")
         
         export_df = df[[
             'Account Number', 'Account Name', 'Account Address', 'Business Unit', 

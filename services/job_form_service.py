@@ -180,9 +180,19 @@ class JobFormService:
             if df.empty:
                 return pd.DataFrame()
 
-            val_df = pd.read_sql(text("SELECT account_number, phone_number FROM validation"), conn)
-            val_df = val_df.sort_values('account_number').groupby('account_number').last().reset_index()
-            df = df.merge(val_df, on='account_number', how='left')
+            # Optimization: Fetch validation data ONLY for the accounts in the current result set
+            acc_list = df['account_number'].unique().tolist()
+            if acc_list:
+                # Use parameterized query for safety and performance
+                val_sql = text("SELECT account_number, phone_number FROM validation WHERE account_number IN :accs")
+                val_df = pd.read_sql(val_sql, conn, params={"accs": acc_list})
+                if not val_df.empty:
+                    val_df = val_df.sort_values('account_number').groupby('account_number').last().reset_index()
+                    df = df.merge(val_df, on='account_number', how='left')
+                else:
+                    df['phone_number'] = None
+            else:
+                df['phone_number'] = None
 
             # Dynamic Outstanding Balance matches dashboard model (Using approved only)
             df['outstanding_balance'] = df['closing_balance'].fillna(0) - df['total_payments'] - df['discount_approved'] - df['adjustment_approved']

@@ -1642,9 +1642,9 @@ def job_form_export():
         stamp = datetime.now().strftime('%d-%m-%Y')
         filename = secure_filename(f"{off_str}_{form_type}_{stamp}.xlsx")
         
-        # Stream Excel directly into in-memory buffer to prevent memory leaks and disk usage
+        # Stream Excel directly into in-memory buffer with memory-optimized engine settings
         buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+        with pd.ExcelWriter(buffer, engine='xlsxwriter', engine_kwargs={'options': {'constant_memory': True}}) as writer:
             df.to_excel(writer, index=False, sheet_name='Job Form')
         buffer.seek(0)
         
@@ -2035,6 +2035,8 @@ def api_payments_export():
         return jsonify({"error": "Missing filters"}), 400
 
     try:
+        # Optimized SQL: Avoiding heavy views (account_financial_summary and all_payments)
+        # We calculate the required metrics only for the accounts that have payments in the date range.
         sql = text("""
             SELECT 
                 p.account_number as 'Account Number', 
@@ -2046,21 +2048,54 @@ def api_payments_export():
                 c.closing_balance as 'Closing Balance',
                 p.amount_paid as 'Amount Paid', 
                 p.date_of_payment as 'Date of Payment', 
-                COALESCE(afs.total_discounts, 0) as 'Total Discount', 
-                COALESCE(afs.total_adjustments, 0) as 'Total Adjustment', 
-                (SELECT SUM(op.amount_paid) FROM other_payments op 
-                 WHERE op.account_number = p.account_number 
-                 AND DATE(op.date_of_payment) BETWEEN :start AND :end) as 'Other Payment',
-                COALESCE(afs.outstanding_balance, 0) as 'Outstanding Balance', 
-                COALESCE(afs.payment_plan, 'No') as 'Payment Plan (Yes/No)',
+                COALESCE(d.total_discounts, 0) as 'Total Discount', 
+                COALESCE(a.total_adjustments, 0) as 'Total Adjustment', 
+                COALESCE(op.other_paid, 0) as 'Other Payment',
+                (c.closing_balance - COALESCE(tp.total_paid, 0) - COALESCE(d.total_discounts, 0) - COALESCE(a.total_adjustments, 0)) as 'Outstanding Balance',
+                CASE 
+                    WHEN (COALESCE(tp.total_paid, 0) >= 0.3 * c.closing_balance) AND (c.closing_balance - COALESCE(tp.total_paid, 0) - COALESCE(d.total_discounts, 0) - COALESCE(a.total_adjustments, 0) > 0)
+                    THEN 'Yes' ELSE 'No' 
+                END as 'Payment Plan (Yes/No)',
                 c.account_officer as 'Account Officer'
-            FROM all_payments p
+            FROM (
+                SELECT account_number, amount_paid, date_of_payment FROM collections
+                WHERE DATE(date_of_payment) BETWEEN :start AND :end
+                UNION ALL
+                SELECT account_number, amount_paid, date_of_payment FROM other_payments
+                WHERE DATE(date_of_payment) BETWEEN :start AND :end
+            ) p
             JOIN customers c ON p.account_number = c.account_number
-            LEFT JOIN account_financial_summary afs ON p.account_number = afs.account_number
+            -- Total Payments for Outstanding Calculation
+            LEFT JOIN (
+                SELECT account_number, SUM(amount_paid) as total_paid FROM (
+                    SELECT account_number, amount_paid FROM collections
+                    UNION ALL
+                    SELECT account_number, amount_paid FROM other_payments
+                ) combined GROUP BY account_number
+            ) tp ON p.account_number = tp.account_number
+            -- Other Payments in date range
+            LEFT JOIN (
+                SELECT account_number, SUM(amount_paid) as other_paid FROM other_payments 
+                WHERE DATE(date_of_payment) BETWEEN :start AND :end
+                GROUP BY account_number
+            ) op ON p.account_number = op.account_number
+            -- Discounts (Approved only)
+            LEFT JOIN (
+                SELECT account_number, SUM(discounted_amount) as total_discounts 
+                FROM discounts 
+                WHERE (LOWER(status) = 'approved' OR LOWER(user_who_approved) LIKE '%okoye%' OR LOWER(user_who_approved) LIKE '%forstinus%')
+                GROUP BY account_number
+            ) d ON p.account_number = d.account_number
+            -- Adjustments (Approved only)
+            LEFT JOIN (
+                SELECT account_number, SUM(adjustment_amount) as total_adjustments 
+                FROM adjustments 
+                WHERE (LOWER(status) = 'approved' OR LOWER(user_who_approved_adjustment) LIKE '%okoye%' OR LOWER(user_who_approved_adjustment) LIKE '%forstinus%')
+                GROUP BY account_number
+            ) a ON p.account_number = a.account_number
             WHERE c.business_unit IN :bus
             AND c.officer_type IN :otypes
             AND c.account_officer IN :onames
-            AND DATE(p.date_of_payment) BETWEEN :start AND :end
             ORDER BY p.date_of_payment DESC
         """)
         
@@ -2088,9 +2123,9 @@ def api_payments_export():
             "end": end_date
         })
         
-        # Stream Excel directly into in-memory buffer to prevent memory leaks and disk usage
+        # Stream Excel directly into in-memory buffer with memory-optimized engine settings
         buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+        with pd.ExcelWriter(buffer, engine='xlsxwriter', engine_kwargs={'options': {'constant_memory': True}}) as writer:
             df.to_excel(writer, index=False, sheet_name='Payments')
         buffer.seek(0)
         
@@ -2246,6 +2281,9 @@ def api_customers_export():
         return jsonify({"error": "Missing filters"}), 400
 
     try:
+        # Optimized SQL: We filter the customers FIRST, then join with other tables 
+        # using subqueries that are also filtered by the same criteria.
+        # This prevents scanning the entire collections/validation/views tables.
         sql = text("""
             SELECT 
                 c.account_number as 'Account Number', 
@@ -2258,14 +2296,75 @@ def api_customers_export():
                 c.dt_name as 'DT Name',
                 v.phone_number as 'Phone Number',
                 c.closing_balance as 'Closing Balance',
-                COALESCE(afs.total_payments, 0) as total_payments,
-                COALESCE(afs.total_discounts, 0) as total_discounts_approved,
-                COALESCE(afs.total_adjustments, 0) as total_adjustments_approved,
+                COALESCE(p.total_payments, 0) as total_payments,
+                COALESCE(d.total_discounts, 0) as total_discounts_approved,
+                COALESCE(a.total_adjustments, 0) as total_adjustments_approved,
                 lp.last_payment_date as 'Last Payment Date'
             FROM customers c
-            LEFT JOIN account_financial_summary afs ON c.account_number = afs.account_number
-            LEFT JOIN (SELECT account_number, MAX(date_of_payment) as last_payment_date FROM collections GROUP BY account_number) lp ON c.account_number = lp.account_number
-            LEFT JOIN (SELECT account_number, phone_number FROM validation WHERE id IN (SELECT MAX(id) FROM validation GROUP BY account_number)) v ON c.account_number = v.account_number
+            -- Last Payment Info (Filtered)
+            LEFT JOIN (
+                SELECT account_number, MAX(date_of_payment) as last_payment_date 
+                FROM collections 
+                WHERE account_number IN (
+                    SELECT account_number FROM customers 
+                    WHERE business_unit IN :bus AND officer_type IN :otypes AND account_officer IN :onames
+                )
+                GROUP BY account_number
+            ) lp ON c.account_number = lp.account_number
+            -- Latest Phone Number (Filtered)
+            LEFT JOIN (
+                SELECT v1.account_number, v1.phone_number 
+                FROM validation v1
+                JOIN (
+                    SELECT account_number, MAX(id) as max_id 
+                    FROM validation 
+                    WHERE account_number IN (
+                        SELECT account_number FROM customers 
+                        WHERE business_unit IN :bus AND officer_type IN :otypes AND account_officer IN :onames
+                    )
+                    GROUP BY account_number
+                ) v2 ON v1.id = v2.max_id
+            ) v ON c.account_number = v.account_number
+            -- Total Payments (Filtered collections + other_payments)
+            LEFT JOIN (
+                SELECT account_number, SUM(amount_paid) as total_payments
+                FROM (
+                    SELECT account_number, amount_paid FROM collections
+                    WHERE account_number IN (
+                        SELECT account_number FROM customers 
+                        WHERE business_unit IN :bus AND officer_type IN :otypes AND account_officer IN :onames
+                    )
+                    UNION ALL
+                    SELECT account_number, amount_paid FROM other_payments
+                    WHERE account_number IN (
+                        SELECT account_number FROM customers 
+                        WHERE business_unit IN :bus AND officer_type IN :otypes AND account_officer IN :onames
+                    )
+                ) as combined_payments
+                GROUP BY account_number
+            ) p ON c.account_number = p.account_number
+            -- Total Discounts (Filtered)
+            LEFT JOIN (
+                SELECT account_number, SUM(discounted_amount) as total_discounts 
+                FROM discounts 
+                WHERE (LOWER(status) = 'approved' OR LOWER(user_who_approved) LIKE '%okoye%' OR LOWER(user_who_approved) LIKE '%forstinus%')
+                AND account_number IN (
+                    SELECT account_number FROM customers 
+                    WHERE business_unit IN :bus AND officer_type IN :otypes AND account_officer IN :onames
+                )
+                GROUP BY account_number
+            ) d ON c.account_number = d.account_number
+            -- Total Adjustments (Filtered)
+            LEFT JOIN (
+                SELECT account_number, SUM(adjustment_amount) as total_adjustments 
+                FROM adjustments 
+                WHERE (LOWER(status) = 'approved' OR LOWER(user_who_approved_adjustment) LIKE '%okoye%' OR LOWER(user_who_approved_adjustment) LIKE '%forstinus%')
+                AND account_number IN (
+                    SELECT account_number FROM customers 
+                    WHERE business_unit IN :bus AND officer_type IN :otypes AND account_officer IN :onames
+                )
+                GROUP BY account_number
+            ) a ON c.account_number = a.account_number
             WHERE c.business_unit IN :bus
             AND c.officer_type IN :otypes
             AND c.account_officer IN :onames
@@ -2291,6 +2390,7 @@ def api_customers_export():
         df['Outstanding Balance'] = df['Closing Balance'] - df['Total Payments'] - df['Valid Discount Amount'] - df['Valid Adjustment Amount']
         
         def get_pp_status(row):
+            # Logic: Payment Plan is 'Yes' if they've paid >= 30% of their debt and still have balance
             is_pp = (row['Total Payments'] >= 0.3 * row['Closing Balance']) and (row['Outstanding Balance'] > 0)
             return "Yes" if is_pp else "No"
 
@@ -2309,9 +2409,9 @@ def api_customers_export():
             "otypes": otypes
         })
         
-        # Stream Excel directly into in-memory buffer to prevent memory leaks and disk usage
+        # Stream Excel directly into in-memory buffer with memory-optimized engine settings
         buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+        with pd.ExcelWriter(buffer, engine='xlsxwriter', engine_kwargs={'options': {'constant_memory': True}}) as writer:
             export_df.to_excel(writer, index=False, sheet_name='Customers')
         buffer.seek(0)
         

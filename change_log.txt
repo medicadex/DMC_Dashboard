@@ -573,4 +573,12 @@ Backend & Frontend Logic:
  -   I m p l e m e n t e d   ' C h a n g e   P a s s w o r d '   p r o m p t   w h e n   u s e r s   f a i l   3   l o g i n   a t t e m p t s ,   r e q u i r i n g   s t a f f _ i d   v e r i f i c a t i o n . 
  -   A d d e d   / a p i / s t a f f / r e s e t - p a s s w o r d - f o r c e d   A P I   r o u t e   t o   s e c u r e l y   h a n d l e   a c c o u n t   r e c o v e r i e s . 
   
+  
+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  
+ D a t e :   2 0 2 6 - 0 6 - 0 8  
+ D e v e l o p e r :   A n t i g r a v i t y  
+ S u m m a r y :   C u s t o m e r   t o   S t a f f   O f f i c e r   T y p e   A l i g n m e n t   &   T r i g g e r   F i x  
+ -   A r c h i t e c t u r e :   R e d e s i g n e d   t h e   ` t r g _ c u s t o m e r s _ o f f i c e r _ b e f o r e _ u p d a t e `   M y S Q L   t r i g g e r   t o   l o o k u p   ` o f f i c e r _ t y p e `   a n d   ` s t a f f _ i d `   w h e n   m i s s i n g / n u l l ,   n o t   j u s t   w h e n   t h e   a c c o u n t   o f f i c e r   n a m e   c h a n g e s .  
+ -   D a t a b a s e :   R a n   a   d a t a b a s e - w i d e   a l i g n m e n t   s c r i p t   ( ` f i x _ d b . p y ` )   t o   c o r r e c t l y   c r o s s - r e f e r e n c e   t h e   ` a c c o u n t _ o f f i c e r `   s t r i n g   o n   t h e   ` c u s t o m e r s `   t a b l e   w i t h   ` n a m e _ o f f i c i a l `   a n d   ` n a m e _ v a r i a n t `   o n   t h e   ` s t a f f `   t a b l e .  
+ -   A r c h i t e c t u r e :   I d e n t i f i e d   a n d   r e m o v e d   a   f a t a l   ` u n i q _ a c t i v e _ a c c o u n t `   c o n s t r a i n t   o n   t h e   ` c u s t o m e r _ o f f i c e r _ h i s t o r y `   t a b l e   t h a t   w a s   c r a s h i n g   t h e   d a t a b a s e   b y   r e s t r i c t i n g   a c c o u n t s   f r o m   h a v i n g   m o r e   t h a n   o n e   h i s t o r i c a l   r e c o r d .  
  

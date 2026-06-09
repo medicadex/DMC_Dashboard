@@ -2281,9 +2281,8 @@ def api_customers_export():
         return jsonify({"error": "Missing filters"}), 400
 
     try:
-        # Optimized SQL: We filter the customers FIRST, then join with other tables 
-        # using subqueries that are also filtered by the same criteria.
-        # This prevents scanning the entire collections/validation/views tables.
+        # Optimized SQL using account_financial_summary view for better performance
+        # This matches the logic in api_customers_preview but for all records.
         sql = text("""
             SELECT 
                 c.account_number as 'Account Number', 
@@ -2296,75 +2295,22 @@ def api_customers_export():
                 c.dt_name as 'DT Name',
                 v.phone_number as 'Phone Number',
                 c.closing_balance as 'Closing Balance',
-                COALESCE(p.total_payments, 0) as total_payments,
-                COALESCE(d.total_discounts, 0) as total_discounts_approved,
-                COALESCE(a.total_adjustments, 0) as total_adjustments_approved,
+                COALESCE(afs.total_payments, 0) as total_payments,
+                COALESCE(afs.total_discounts, 0) as total_discounts_approved,
+                COALESCE(afs.total_adjustments, 0) as total_adjustments_approved,
                 lp.last_payment_date as 'Last Payment Date'
             FROM customers c
-            -- Last Payment Info (Filtered)
+            LEFT JOIN account_financial_summary afs ON c.account_number = afs.account_number
             LEFT JOIN (
                 SELECT account_number, MAX(date_of_payment) as last_payment_date 
                 FROM collections 
-                WHERE account_number IN (
-                    SELECT account_number FROM customers 
-                    WHERE business_unit IN :bus AND officer_type IN :otypes AND account_officer IN :onames
-                )
                 GROUP BY account_number
             ) lp ON c.account_number = lp.account_number
-            -- Latest Phone Number (Filtered)
             LEFT JOIN (
-                SELECT v1.account_number, v1.phone_number 
-                FROM validation v1
-                JOIN (
-                    SELECT account_number, MAX(id) as max_id 
-                    FROM validation 
-                    WHERE account_number IN (
-                        SELECT account_number FROM customers 
-                        WHERE business_unit IN :bus AND officer_type IN :otypes AND account_officer IN :onames
-                    )
-                    GROUP BY account_number
-                ) v2 ON v1.id = v2.max_id
+                SELECT account_number, phone_number 
+                FROM validation 
+                WHERE id IN (SELECT MAX(id) FROM validation GROUP BY account_number)
             ) v ON c.account_number = v.account_number
-            -- Total Payments (Filtered collections + other_payments)
-            LEFT JOIN (
-                SELECT account_number, SUM(amount_paid) as total_payments
-                FROM (
-                    SELECT account_number, amount_paid FROM collections
-                    WHERE account_number IN (
-                        SELECT account_number FROM customers 
-                        WHERE business_unit IN :bus AND officer_type IN :otypes AND account_officer IN :onames
-                    )
-                    UNION ALL
-                    SELECT account_number, amount_paid FROM other_payments
-                    WHERE account_number IN (
-                        SELECT account_number FROM customers 
-                        WHERE business_unit IN :bus AND officer_type IN :otypes AND account_officer IN :onames
-                    )
-                ) as combined_payments
-                GROUP BY account_number
-            ) p ON c.account_number = p.account_number
-            -- Total Discounts (Filtered)
-            LEFT JOIN (
-                SELECT account_number, SUM(discounted_amount) as total_discounts 
-                FROM discounts 
-                WHERE (LOWER(status) = 'approved' OR LOWER(user_who_approved) LIKE '%okoye%' OR LOWER(user_who_approved) LIKE '%forstinus%')
-                AND account_number IN (
-                    SELECT account_number FROM customers 
-                    WHERE business_unit IN :bus AND officer_type IN :otypes AND account_officer IN :onames
-                )
-                GROUP BY account_number
-            ) d ON c.account_number = d.account_number
-            -- Total Adjustments (Filtered)
-            LEFT JOIN (
-                SELECT account_number, SUM(adjustment_amount) as total_adjustments 
-                FROM adjustments 
-                WHERE (LOWER(status) = 'approved' OR LOWER(user_who_approved_adjustment) LIKE '%okoye%' OR LOWER(user_who_approved_adjustment) LIKE '%forstinus%')
-                AND account_number IN (
-                    SELECT account_number FROM customers 
-                    WHERE business_unit IN :bus AND officer_type IN :otypes AND account_officer IN :onames
-                )
-                GROUP BY account_number
-            ) a ON c.account_number = a.account_number
             WHERE c.business_unit IN :bus
             AND c.officer_type IN :otypes
             AND c.account_officer IN :onames
@@ -2373,9 +2319,9 @@ def api_customers_export():
         
         with engine.connect() as conn:
             df = pd.read_sql(sql, conn, params={
-                "bus": list(bus),
-                "otypes": list(otypes),
-                "onames": list(onames)
+                "bus": tuple(bus),
+                "otypes": tuple(otypes),
+                "onames": tuple(onames)
             })
             
         if df.empty:

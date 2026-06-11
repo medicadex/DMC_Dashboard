@@ -2124,9 +2124,9 @@ def api_payments_export():
             "end": end_date
         })
         
-        # Stream Excel directly into in-memory buffer with memory-optimized engine settings
+        # Stream Excel directly into in-memory buffer
         buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter', engine_kwargs={'options': {'constant_memory': True}}) as writer:
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             df.to_excel(writer, index=False, sheet_name='Payments')
         buffer.seek(0)
         
@@ -2357,9 +2357,9 @@ def api_customers_export():
             "otypes": otypes
         })
         
-        # Stream Excel directly into in-memory buffer with memory-optimized engine settings
+        # Stream Excel directly into in-memory buffer
         buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter', engine_kwargs={'options': {'constant_memory': True}}) as writer:
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             export_df.to_excel(writer, index=False, sheet_name='Customers')
         buffer.seek(0)
         

@@ -36,8 +36,8 @@
                     <div><span style="color: var(--text-muted); font-size: 11px;">Undertaking:</span> <span id="bannerUT" style="font-weight: 700;">--</span></div>
                     <div><span style="color: var(--text-muted); font-size: 11px;">Officer:</span> <span id="bannerOfficer" style="font-weight: 700;">--</span></div>
                 </div>
-                <button id="downloadSOABtn" class="btn-download-pdf">
-                    <i class="fas fa-file-pdf"></i> Preview / Download Statement
+                <button id="downloadSOABtn" class="btn-download-pdf" disabled>
+                    <i class="fas fa-file-pdf"></i> Preview / Download Statement (Temporarily Unavailable)
                 </button>
             </div>
         </div>
@@ -374,17 +374,14 @@
             document.getElementById('bannerUT').innerText = acc.undertaking || '--';
             document.getElementById('bannerOfficer').innerText = acc.account_officer || '--';
 
-            // Bind PDF Download Event
+            // Bind PDF Download Event - Currently Disabled
             document.getElementById('downloadSOABtn').onclick = () => {
-                const message = "WARNING: This Statement of Account (SOA) is strictly confidential and is for internal administrative use only. It must not be issued to, shared with, or photographed for the customer.\n\nClick OK to proceed to preview.";
-                if (confirm(message)) {
-                    window.open(`/api/account/soa/${encodeURIComponent(acc.account_number)}`, '_blank');
-                }
+                // Do nothing - button is disabled
             };
-            document.getElementById('downloadSOABtn').disabled = false;
-            document.getElementById('downloadSOABtn').style.opacity = '1';
-            document.getElementById('downloadSOABtn').style.cursor = 'pointer';
-            document.getElementById('downloadSOABtn').title = "Preview / Download Statement";
+            document.getElementById('downloadSOABtn').disabled = true;
+            document.getElementById('downloadSOABtn').style.opacity = '0.5';
+            document.getElementById('downloadSOABtn').style.cursor = 'not-allowed';
+            document.getElementById('downloadSOABtn').title = "Download Statement feature is temporarily unavailable. Please check back later.";
 
             // Col 1 Demographic
             document.getElementById('col1').innerHTML = `

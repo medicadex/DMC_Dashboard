@@ -80,7 +80,7 @@ class ReportingService:
 
             # 5. Identify Peak Recovery Month (Highest historical month)
             peak_sql = """
-                SELECT DATE_FORMAT(date_of_payment, '%Y-%m-01') as month, SUM(amount_paid) as total
+                SELECT TO_CHAR(date_of_payment, 'YYYY-MM-01') as month, SUM(amount_paid) as total
                 FROM all_payments
                 GROUP BY month
                 ORDER BY total DESC
@@ -100,7 +100,7 @@ class ReportingService:
 
             # 6. Main Performance Query — grouped by history-resolved officer/BU
             group_cols   = f"{eff_officer}" if off_type == "Vendor" else f"{eff_bu}, {eff_officer}"
-            bu_col       = f"GROUP_CONCAT(DISTINCT {eff_bu} SEPARATOR ', ') as business_unit" if off_type == "Vendor" else f"{eff_bu} as business_unit"
+            bu_col       = f"STRING_AGG(DISTINCT {eff_bu}, ', ') as business_unit" if off_type == "Vendor" else f"{eff_bu} as business_unit"
             join_on      = "curr.account_officer = peak.account_officer" if off_type == "Vendor" else "curr.business_unit = peak.business_unit AND curr.account_officer = peak.account_officer"
             join_on_prev = "curr.account_officer = prev.account_officer" if off_type == "Vendor" else "curr.business_unit = prev.business_unit AND curr.account_officer = prev.account_officer"
 
@@ -116,7 +116,7 @@ class ReportingService:
                     JOIN customers c ON p.account_number = c.account_number
                     {history_join}
                     LEFT JOIN account_financial_summary afs ON p.account_number = afs.account_number
-                    WHERE DATE(p.date_of_payment) BETWEEN DATE(:mtd_start) AND DATE(:mtd_end)
+                    WHERE p.date_of_payment\:\:date BETWEEN :mtd_start\:\:date AND :mtd_end\:\:date
                     {filter_clause}
                     GROUP BY {group_cols}
                 ),
@@ -128,7 +128,7 @@ class ReportingService:
                     FROM all_payments p
                     JOIN customers c ON p.account_number = c.account_number
                     {history_join}
-                    WHERE DATE(p.date_of_payment) BETWEEN DATE(:peak_start) AND DATE(:peak_end)
+                    WHERE p.date_of_payment\:\:date BETWEEN :peak_start\:\:date AND :peak_end\:\:date
                     {filter_clause}
                     GROUP BY {group_cols}
                 ),
@@ -140,18 +140,18 @@ class ReportingService:
                     FROM all_payments p
                     JOIN customers c ON p.account_number = c.account_number
                     {history_join}
-                    WHERE DATE(p.date_of_payment) BETWEEN DATE(:prev_start) AND DATE(:prev_end)
+                    WHERE p.date_of_payment\:\:date BETWEEN :prev_start\:\:date AND :prev_end\:\:date
                     {filter_clause}
                     GROUP BY {group_cols}
                 )
                 SELECT
                     curr.business_unit as BU,
-                    curr.account_officer as `Account Officer`,
+                    curr.account_officer as "Account Officer",
                     curr.actual_mtd as Actual,
                     curr.response_count as Response,
-                    curr.payoff_count as `Debt Pay-Off`,
-                    peak.peak_mtd as `Peak Recovery`,
-                    prev.prev_mtd as `Prev MoM Recovery`
+                    curr.payoff_count as "Debt Pay-Off",
+                    peak.peak_mtd as "Peak Recovery",
+                    prev.prev_mtd as "Prev MoM Recovery"
                 FROM current_recovery curr
                 LEFT JOIN peak_recovery peak ON {join_on}
                 LEFT JOIN prev_month_recovery prev ON {join_on_prev}
@@ -252,9 +252,9 @@ class ReportingService:
         # Backend Search Logic (Global Search)
         if search_query:
             if mode == "collection":
-                search_clause = " AND (c.account_number LIKE :sq OR c.account_name LIKE :sq OR c.business_unit LIKE :sq OR c.account_officer LIKE :sq)"
+                search_clause = " AND (c.account_number ILIKE :sq OR c.account_name ILIKE :sq OR c.business_unit ILIKE :sq OR c.account_officer ILIKE :sq)"
             else:
-                search_clause = " AND (main.account_number LIKE :sq OR c.account_name LIKE :sq OR c.business_unit LIKE :sq OR c.account_officer LIKE :sq)"
+                search_clause = " AND (main.account_number ILIKE :sq OR c.account_name ILIKE :sq OR c.business_unit ILIKE :sq OR c.account_officer ILIKE :sq)"
             filters = str(filters) + search_clause
             params["sq"] = f"%{search_query}%"
 
@@ -269,26 +269,26 @@ class ReportingService:
                     elif col == "account_officer": db_col = "COALESCE(h.account_officer, c.account_officer)"
                     
                     param_name = f"col_p_{abs(hash(col))}"
-                    filters = str(filters) + f" AND {db_col} LIKE :{param_name}"
+                    filters = str(filters) + f" AND {db_col} ILIKE :{param_name}"
                     params[param_name] = f"%{val}%"
 
         if mode == "listing":
             sql = f"""
                 SELECT 
-                    main.account_number as `Account Number`, 
-                    c.account_name as `Account Name`,
-                    c.business_unit as `Business Unit`, 
-                    c.undertaking as `Undertaking`,
-                    c.dt_name as `DT Name`,
-                    c.closing_balance as `Closing Balance`,
-                    main.amount_paid as `Amount Paid`,
-                    main.date_of_payment as `Date of Payment`, 
-                    COALESCE(afs.total_discounts, 0) as `Total Discount`, 
-                    COALESCE(afs.total_adjustments, 0) as `Total Adjustment`, 
-                    (SELECT SUM(op.amount_paid) FROM other_payments op WHERE op.account_number = main.account_number AND DATE(op.date_of_payment) BETWEEN DATE(:start) AND DATE(:end)) as `Other Payment`,
-                    COALESCE(afs.outstanding_balance, 0) as `Outstanding Balance`,
-                    COALESCE(afs.payment_plan, 'No') as `Payment Plan (Yes/No)`,
-                    COALESCE(h.account_officer, c.account_officer) as `Account Officer`
+                    main.account_number as "Account Number", 
+                    c.account_name as "Account Name",
+                    c.business_unit as "Business Unit", 
+                    c.undertaking as "Undertaking",
+                    c.dt_name as "DT Name",
+                    c.closing_balance as "Closing Balance",
+                    main.amount_paid as "Amount Paid",
+                    main.date_of_payment as "Date of Payment", 
+                    COALESCE(afs.total_discounts, 0) as "Total Discount", 
+                    COALESCE(afs.total_adjustments, 0) as "Total Adjustment", 
+                    (SELECT SUM(op.amount_paid) FROM other_payments op WHERE op.account_number = main.account_number AND op.date_of_payment\:\:date BETWEEN :start\:\:date AND :end\:\:date) as "Other Payment",
+                    COALESCE(afs.outstanding_balance, 0) as "Outstanding Balance",
+                    COALESCE(afs.payment_plan, 'No') as "Payment Plan (Yes/No)",
+                    COALESCE(h.account_officer, c.account_officer) as "Account Officer"
                 FROM all_payments main
                 LEFT JOIN customers c ON main.account_number = c.account_number
                 LEFT JOIN account_financial_summary afs ON afs.account_number = main.account_number
@@ -309,25 +309,25 @@ class ReportingService:
         elif mode == "collection":
             sql = f"""
                 SELECT 
-                    c.account_number as `Account Number`,
-                    c.account_name as `Account Name`,
-                    c.business_unit as `Business Unit`,
-                    c.undertaking as `Undertaking`,
-                    c.account_officer as `Account Officer`,
-                    c.closing_balance as `Closing Balance`,
-                    COALESCE(p.total_payments, 0) as `Total Payments`,
-                    COALESCE(d.total_discounts, 0) as `Valid Discount Amount`,
-                    COALESCE(a.total_adjustments, 0) as `Valid Adjustment Amount`,
-                    (COALESCE(c.closing_balance, 0) - COALESCE(p.total_payments, 0) - COALESCE(d.total_discounts, 0) + COALESCE(a.total_adjustments, 0)) as `Outstanding Balance`,
+                    c.account_number as "Account Number",
+                    c.account_name as "Account Name",
+                    c.business_unit as "Business Unit",
+                    c.undertaking as "Undertaking",
+                    c.account_officer as "Account Officer",
+                    c.closing_balance as "Closing Balance",
+                    COALESCE(p.total_payments, 0) as "Total Payments",
+                    COALESCE(d.total_discounts, 0) as "Valid Discount Amount",
+                    COALESCE(a.total_adjustments, 0) as "Valid Adjustment Amount",
+                    (COALESCE(c.closing_balance, 0) - COALESCE(p.total_payments, 0) - COALESCE(d.total_discounts, 0) + COALESCE(a.total_adjustments, 0)) as "Outstanding Balance",
                     CASE 
                         WHEN (COALESCE(p.total_payments, 0) >= 0.3 * COALESCE(c.closing_balance, 0)) 
                         AND (COALESCE(c.closing_balance, 0) - COALESCE(p.total_payments, 0) - COALESCE(d.total_discounts, 0) + COALESCE(a.total_adjustments, 0) > 0) 
                         THEN 'Yes' ELSE 'No' 
-                    END as `Current Payment-Plan Status`
+                    END as "Current Payment-Plan Status"
                 FROM customers c
-                LEFT JOIN (SELECT account_number, SUM(amount_paid) as total_payments FROM all_payments WHERE DATE(date_of_payment) BETWEEN DATE(:start) AND DATE(:end) GROUP BY account_number) p ON c.account_number = p.account_number
-                LEFT JOIN (SELECT account_number, SUM(discounted_amount) as total_discounts FROM discounts WHERE status = 'approved' AND DATE(date_approved) BETWEEN DATE(:start) AND DATE(:end) GROUP BY account_number) d ON c.account_number = d.account_number
-                LEFT JOIN (SELECT account_number, SUM(adjustment_amount) as total_adjustments FROM adjustments WHERE status = 'approved' AND DATE(date_approved) BETWEEN DATE(:start) AND DATE(:end) GROUP BY account_number) a ON c.account_number = a.account_number
+                LEFT JOIN (SELECT account_number, SUM(amount_paid) as total_payments FROM all_payments WHERE date_of_payment\:\:date BETWEEN :start\:\:date AND :end\:\:date GROUP BY account_number) p ON c.account_number = p.account_number
+                LEFT JOIN (SELECT account_number, SUM(discounted_amount) as total_discounts FROM discounts WHERE status = 'approved' AND date_approved\:\:date BETWEEN :start\:\:date AND :end\:\:date GROUP BY account_number) d ON c.account_number = d.account_number
+                LEFT JOIN (SELECT account_number, SUM(adjustment_amount) as total_adjustments FROM adjustments WHERE status = 'approved' AND date_approved\:\:date BETWEEN :start\:\:date AND :end\:\:date GROUP BY account_number) a ON c.account_number = a.account_number
                 {filters}
                 ORDER BY c.account_name ASC
             """
@@ -344,17 +344,17 @@ class ReportingService:
             s_eff_officer = "COALESCE(hs.account_officer, c.account_officer)"
             s_eff_bu      = "COALESCE(hs.business_unit,   c.business_unit)"
             group_cols = f"{s_eff_officer}" if off_type == "Vendor" else f"{s_eff_bu}, {s_eff_officer}"
-            bu_col = f"GROUP_CONCAT(DISTINCT {s_eff_bu} SEPARATOR ', ') as `Business Unit`" if off_type == "Vendor" else f"{s_eff_bu} as `Business Unit`"
+            bu_col = f"STRING_AGG(DISTINCT {s_eff_bu}, ', ') as \"Business Unit\"" if off_type == "Vendor" else f"{s_eff_bu} as \"Business Unit\""
 
             sql = f"""
                 SELECT
-                    ROW_NUMBER() OVER (ORDER BY SUM(CASE WHEN DATE(main.date_of_payment) >= :month_start THEN main.amount_paid ELSE 0 END) DESC) as `S/N`,
+                    ROW_NUMBER() OVER (ORDER BY SUM(CASE WHEN main.date_of_payment\:\:date >= :month_start\:\:date THEN main.amount_paid ELSE 0 END) DESC) as "S/N",
                     {bu_col},
-                    {s_eff_officer} as `Account Officer`,
-                    SUM(CASE WHEN DATE(main.date_of_payment) = :today     THEN main.amount_paid ELSE 0 END) as `Today's Payment`,
-                    SUM(CASE WHEN DATE(main.date_of_payment) = :yesterday  THEN main.amount_paid ELSE 0 END) as `Yesterday Recovery`,
-                    SUM(CASE WHEN DATE(main.date_of_payment) >= :week_start THEN main.amount_paid ELSE 0 END) as `This Week Recovery`,
-                    SUM(CASE WHEN DATE(main.date_of_payment) >= :month_start THEN main.amount_paid ELSE 0 END) as `Total Recovery`
+                    {s_eff_officer} as "Account Officer",
+                    SUM(CASE WHEN main.date_of_payment\:\:date = :today\:\:date     THEN main.amount_paid ELSE 0 END) as "Today's Payment",
+                    SUM(CASE WHEN main.date_of_payment\:\:date = :yesterday\:\:date  THEN main.amount_paid ELSE 0 END) as "Yesterday Recovery",
+                    SUM(CASE WHEN main.date_of_payment\:\:date >= :week_start\:\:date THEN main.amount_paid ELSE 0 END) as "This Week Recovery",
+                    SUM(CASE WHEN main.date_of_payment\:\:date >= :month_start\:\:date THEN main.amount_paid ELSE 0 END) as "Total Recovery"
                 FROM all_payments main
                 LEFT JOIN customers c ON main.account_number = c.account_number
                 LEFT JOIN customer_officer_history hs
@@ -362,7 +362,7 @@ class ReportingService:
                     AND main.date_of_payment BETWEEN hs.start_date AND COALESCE(hs.end_date, '9999-12-31')
                 {filters}
                 GROUP BY {group_cols}
-                ORDER BY `Total Recovery` DESC
+                ORDER BY "Total Recovery" DESC
             """
 
         # Apply limit/offset for preview
@@ -379,9 +379,9 @@ class ReportingService:
                 # Compute grand totals globally across the full filtered dataset (bypassing limitation)
                 totals_sql = f"""
                     SELECT 
-                        SUM(`Closing Balance`), 
-                        SUM(`Total Payments`), 
-                        SUM(`Outstanding Balance`) 
+                        SUM("Closing Balance"), 
+                        SUM("Total Payments"), 
+                        SUM("Outstanding Balance") 
                     FROM ({sql}) AS t
                 """
                 t_row = conn.execute(text(totals_sql), params).fetchone()
@@ -416,9 +416,9 @@ class ReportingService:
         
         filters = ""
         if mode == "collection":
-            filters = " WHERE DATE(c.created_at) BETWEEN DATE(:start) AND DATE(:end)"
+            filters = " WHERE c.created_at\:\:date BETWEEN :start\:\:date AND :end\:\:date"
         else:
-            filters = " WHERE DATE(main.date_of_payment) BETWEEN DATE(:start) AND DATE(:end)"
+            filters = " WHERE main.date_of_payment\:\:date BETWEEN :start\:\:date AND :end\:\:date"
         
         if off_type != "All":
             filters += " AND c.officer_type = :off_type"
@@ -454,20 +454,20 @@ class ReportingService:
         if mode == "listing":
             sql = f"""
                 SELECT 
-                    main.account_number as `Account Number`, 
-                    c.account_name as `Account Name`,
-                    c.business_unit as `Business Unit`, 
-                    c.undertaking as `Undertaking`,
-                    c.dt_name as `DT Name`,
-                    c.closing_balance as `Closing Balance`,
-                    main.amount_paid as `Amount Paid`,
-                    main.date_of_payment as `Date of Payment`, 
-                    COALESCE(afs.total_discounts, 0) as `Total Discount`, 
-                    COALESCE(afs.total_adjustments, 0) as `Total Adjustment`, 
-                    (SELECT SUM(op.amount_paid) FROM other_payments op WHERE op.account_number = main.account_number AND DATE(op.date_of_payment) BETWEEN DATE(:start) AND DATE(:end)) as `Other Payment`,
-                    COALESCE(afs.outstanding_balance, 0) as `Outstanding Balance`,
-                    COALESCE(afs.payment_plan, 'No') as `Payment Plan (Yes/No)`,
-                    COALESCE(h.account_officer, c.account_officer) as `Account Officer`
+                    main.account_number as "Account Number", 
+                    c.account_name as "Account Name",
+                    c.business_unit as "Business Unit", 
+                    c.undertaking as "Undertaking",
+                    c.dt_name as "DT Name",
+                    c.closing_balance as "Closing Balance",
+                    main.amount_paid as "Amount Paid",
+                    main.date_of_payment as "Date of Payment", 
+                    COALESCE(afs.total_discounts, 0) as "Total Discount", 
+                    COALESCE(afs.total_adjustments, 0) as "Total Adjustment", 
+                    (SELECT SUM(op.amount_paid) FROM other_payments op WHERE op.account_number = main.account_number AND op.date_of_payment\:\:date BETWEEN :start\:\:date AND :end\:\:date) as "Other Payment",
+                    COALESCE(afs.outstanding_balance, 0) as "Outstanding Balance",
+                    COALESCE(afs.payment_plan, 'No') as "Payment Plan (Yes/No)",
+                    COALESCE(h.account_officer, c.account_officer) as "Account Officer"
                 FROM all_payments main
                 LEFT JOIN customers c ON main.account_number = c.account_number
                 LEFT JOIN account_financial_summary afs ON afs.account_number = main.account_number
@@ -481,25 +481,25 @@ class ReportingService:
         elif mode == "collection":
             sql = f"""
                 SELECT 
-                    c.account_number as `Account Number`,
-                    c.account_name as `Account Name`,
-                    c.business_unit as `Business Unit`,
-                    c.undertaking as `Undertaking`,
-                    c.account_officer as `Account Officer`,
-                    c.closing_balance as `Closing Balance`,
-                    COALESCE(p.total_payments, 0) as `Total Payments`,
-                    COALESCE(d.total_discounts, 0) as `Valid Discount Amount`,
-                    COALESCE(a.total_adjustments, 0) as `Valid Adjustment Amount`,
-                    (COALESCE(c.closing_balance, 0) - COALESCE(p.total_payments, 0) - COALESCE(d.total_discounts, 0) + COALESCE(a.total_adjustments, 0)) as `Outstanding Balance`,
+                    c.account_number as "Account Number",
+                    c.account_name as "Account Name",
+                    c.business_unit as "Business Unit",
+                    c.undertaking as "Undertaking",
+                    c.account_officer as "Account Officer",
+                    c.closing_balance as "Closing Balance",
+                    COALESCE(p.total_payments, 0) as "Total Payments",
+                    COALESCE(d.total_discounts, 0) as "Valid Discount Amount",
+                    COALESCE(a.total_adjustments, 0) as "Valid Adjustment Amount",
+                    (COALESCE(c.closing_balance, 0) - COALESCE(p.total_payments, 0) - COALESCE(d.total_discounts, 0) + COALESCE(a.total_adjustments, 0)) as "Outstanding Balance",
                     CASE 
                         WHEN (COALESCE(p.total_payments, 0) >= 0.3 * COALESCE(c.closing_balance, 0)) 
                         AND (COALESCE(c.closing_balance, 0) - COALESCE(p.total_payments, 0) - COALESCE(d.total_discounts, 0) + COALESCE(a.total_adjustments, 0) > 0) 
                         THEN 'Yes' ELSE 'No' 
-                    END as `Current Payment-Plan Status`
+                    END as "Current Payment-Plan Status"
                 FROM customers c
-                LEFT JOIN (SELECT account_number, SUM(amount_paid) as total_payments FROM all_payments WHERE date_of_payment BETWEEN :start AND :end GROUP BY account_number) p ON c.account_number = p.account_number
-                LEFT JOIN (SELECT account_number, SUM(discounted_amount) as total_discounts FROM discounts WHERE status = 'approved' AND date_approved BETWEEN :start AND :end GROUP BY account_number) d ON c.account_number = d.account_number
-                LEFT JOIN (SELECT account_number, SUM(adjustment_amount) as total_adjustments FROM adjustments WHERE status = 'approved' AND date_approved BETWEEN :start AND :end GROUP BY account_number) a ON c.account_number = a.account_number
+                LEFT JOIN (SELECT account_number, SUM(amount_paid) as total_payments FROM all_payments WHERE date_of_payment\:\:date BETWEEN :start\:\:date AND :end\:\:date GROUP BY account_number) p ON c.account_number = p.account_number
+                LEFT JOIN (SELECT account_number, SUM(discounted_amount) as total_discounts FROM discounts WHERE status = 'approved' AND date_approved\:\:date BETWEEN :start\:\:date AND :end\:\:date GROUP BY account_number) d ON c.account_number = d.account_number
+                LEFT JOIN (SELECT account_number, SUM(adjustment_amount) as total_adjustments FROM adjustments WHERE status = 'approved' AND date_approved\:\:date BETWEEN :start\:\:date AND :end\:\:date GROUP BY account_number) a ON c.account_number = a.account_number
                 {filters}
                 ORDER BY c.account_name ASC
             """
@@ -516,17 +516,17 @@ class ReportingService:
             s_eff_officer = "COALESCE(hs.account_officer, c.account_officer)"
             s_eff_bu      = "COALESCE(hs.business_unit,   c.business_unit)"
             group_cols = f"{s_eff_officer}" if off_type == "Vendor" else f"{s_eff_bu}, {s_eff_officer}"
-            bu_col = f"GROUP_CONCAT(DISTINCT {s_eff_bu} SEPARATOR ', ') as `Business Unit`" if off_type == "Vendor" else f"{s_eff_bu} as `Business Unit`"
+            bu_col = f"STRING_AGG(DISTINCT {s_eff_bu}, ', ') as \"Business Unit\"" if off_type == "Vendor" else f"{s_eff_bu} as \"Business Unit\""
 
             sql = f"""
                 SELECT
-                    ROW_NUMBER() OVER (ORDER BY SUM(CASE WHEN DATE(main.date_of_payment) >= :month_start THEN main.amount_paid ELSE 0 END) DESC) as `S/N`,
+                    ROW_NUMBER() OVER (ORDER BY SUM(CASE WHEN main.date_of_payment\:\:date >= :month_start\:\:date THEN main.amount_paid ELSE 0 END) DESC) as "S/N",
                     {bu_col},
-                    {s_eff_officer} as `Account Officer`,
-                    SUM(CASE WHEN DATE(main.date_of_payment) = :today     THEN main.amount_paid ELSE 0 END) as `Today's Payment`,
-                    SUM(CASE WHEN DATE(main.date_of_payment) = :yesterday  THEN main.amount_paid ELSE 0 END) as `Yesterday Recovery`,
-                    SUM(CASE WHEN DATE(main.date_of_payment) >= :week_start THEN main.amount_paid ELSE 0 END) as `This Week Recovery`,
-                    SUM(CASE WHEN DATE(main.date_of_payment) >= :month_start THEN main.amount_paid ELSE 0 END) as `Total Recovery`
+                    {s_eff_officer} as "Account Officer",
+                    SUM(CASE WHEN main.date_of_payment\:\:date = :today\:\:date     THEN main.amount_paid ELSE 0 END) as "Today's Payment",
+                    SUM(CASE WHEN main.date_of_payment\:\:date = :yesterday\:\:date  THEN main.amount_paid ELSE 0 END) as "Yesterday Recovery",
+                    SUM(CASE WHEN main.date_of_payment\:\:date >= :week_start\:\:date THEN main.amount_paid ELSE 0 END) as "This Week Recovery",
+                    SUM(CASE WHEN main.date_of_payment\:\:date >= :month_start\:\:date THEN main.amount_paid ELSE 0 END) as "Total Recovery"
                 FROM all_payments main
                 LEFT JOIN customers c ON main.account_number = c.account_number
                 LEFT JOIN customer_officer_history hs
@@ -534,7 +534,7 @@ class ReportingService:
                     AND main.date_of_payment BETWEEN hs.start_date AND COALESCE(hs.end_date, '9999-12-31')
                 {filters}
                 GROUP BY {group_cols}
-                ORDER BY `Total Recovery` DESC
+                ORDER BY "Total Recovery" DESC
             """
 
         with self.engine.connect() as conn:

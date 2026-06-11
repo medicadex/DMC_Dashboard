@@ -14,6 +14,7 @@ from werkzeug.utils import secure_filename
 from sqlalchemy import text
 import pandas as pd
 import numpy as np
+from supabase import create_client, Client
 
 from db_utils import get_db_engine
 
@@ -81,12 +82,23 @@ def generate_descriptive_filename(base_name, filters):
 # CONFIG
 # ────────────────────────────────────────────────
 engine = get_db_engine()
+
+# Supabase Auth Client
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+supabase: Client = None
+if SUPABASE_URL and SUPABASE_ANON_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    except Exception as e:
+        logger.error(f"Failed to initialize Supabase client: {e}")
+
 staff_repo = StaffRepository(engine)
 validation_service = ValidationService(engine)
 account_service = AccountService(engine, staff_repo, validation_service)
 job_form_service = JobFormService(engine)
 session_manager = SessionManager(timeout_minutes=15)
-auth_service = AuthService(staff_repo, session_manager)
+auth_service = AuthService(staff_repo, session_manager, supabase_client=supabase)
 upload_service = UploadService(engine, staff_repo)
 reporting_service = ReportingService(engine, staff_repo)
 admin_report_service = AdminReportService(engine, staff_repo)
@@ -247,7 +259,7 @@ def vendor_login():
             sql = text("""
                 SELECT DISTINCT account_officer 
                 FROM customers 
-                WHERE officer_type = 'Vendor' AND LOWER(account_officer) LIKE :p 
+                WHERE officer_type = 'Vendor' AND account_officer ILIKE :p 
                 ORDER BY account_officer ASC
             """)
             with engine.connect() as conn:
@@ -500,10 +512,10 @@ def admin_create_staff():
             query = text("""
                 INSERT INTO staff (staff_id, username, first_name, surname, name_official, email, phone_number, officer_type, business_unit, role, password_hash, sync_status)
                 VALUES (:sid, :uname, :fname, :sname, :no, :em, :ph, :ot, :bu, :r, :phash, 'SYNCED')
-                ON DUPLICATE KEY UPDATE
-                first_name=VALUES(first_name), surname=VALUES(surname), name_official=VALUES(name_official),
-                email=VALUES(email), phone_number=VALUES(phone_number), officer_type=VALUES(officer_type), 
-                business_unit=VALUES(business_unit), role=VALUES(role), password_hash=VALUES(password_hash)
+                ON CONFLICT (staff_id) DO UPDATE SET
+                first_name=EXCLUDED.first_name, surname=EXCLUDED.surname, name_official=EXCLUDED.name_official,
+                email=EXCLUDED.email, phone_number=EXCLUDED.phone_number, officer_type=EXCLUDED.officer_type, 
+                business_unit=EXCLUDED.business_unit, role=EXCLUDED.role, password_hash=EXCLUDED.password_hash
             """)
             conn.execute(query, {
                 'sid': sid, 'uname': uname, 'fname': fname, 'sname': sname, 'no': no,
@@ -614,17 +626,17 @@ def bulk_upload_staff():
                     query = text("""
                         INSERT INTO staff (staff_id, username, first_name, surname, name_official, name_variant, email, phone_number, officer_type, business_unit, role, password_hash, sync_status)
                         VALUES (:sid, :uname, :fname, :sname, :no, :nv, :em, :ph, :ot, :bu, :r, :phash, 'SYNCED')
-                        ON DUPLICATE KEY UPDATE
-                        username=IF(VALUES(username) IS NOT NULL, VALUES(username), username),
-                        first_name=IF(VALUES(first_name) != '', VALUES(first_name), first_name),
-                        surname=IF(VALUES(surname) != '', VALUES(surname), surname),
-                        name_official=IF(VALUES(name_official) != '', VALUES(name_official), name_official),
-                        name_variant=IF(VALUES(name_variant) != '', VALUES(name_variant), name_variant),
-                        email=IF(VALUES(email) != '', VALUES(email), email),
-                        phone_number=IF(VALUES(phone_number) != '', VALUES(phone_number), phone_number),
-                        officer_type=IF(VALUES(officer_type) != '', VALUES(officer_type), officer_type),
-                        business_unit=IF(VALUES(business_unit) != '', VALUES(business_unit), business_unit),
-                        role=IF(VALUES(role) != '', VALUES(role), role)
+                        ON CONFLICT (staff_id) DO UPDATE SET
+                        username = COALESCE(EXCLUDED.username, staff.username),
+                        first_name = CASE WHEN EXCLUDED.first_name != '' THEN EXCLUDED.first_name ELSE staff.first_name END,
+                        surname = CASE WHEN EXCLUDED.surname != '' THEN EXCLUDED.surname ELSE staff.surname END,
+                        name_official = CASE WHEN EXCLUDED.name_official != '' THEN EXCLUDED.name_official ELSE staff.name_official END,
+                        name_variant = CASE WHEN EXCLUDED.name_variant != '' THEN EXCLUDED.name_variant ELSE staff.name_variant END,
+                        email = CASE WHEN EXCLUDED.email != '' THEN EXCLUDED.email ELSE staff.email END,
+                        phone_number = CASE WHEN EXCLUDED.phone_number != '' THEN EXCLUDED.phone_number ELSE staff.phone_number END,
+                        officer_type = CASE WHEN EXCLUDED.officer_type != '' THEN EXCLUDED.officer_type ELSE staff.officer_type END,
+                        business_unit = CASE WHEN EXCLUDED.business_unit != '' THEN EXCLUDED.business_unit ELSE staff.business_unit END,
+                        role = CASE WHEN EXCLUDED.role != '' THEN EXCLUDED.role ELSE staff.role END
                     """)
                     conn.execute(query, {
                         'sid': sid, 'uname': uname, 'fname': fname, 'sname': sname, 'no': no, 'nv': nv,
@@ -731,11 +743,7 @@ def get_dashboard_stats():
             # 1. Monthly BU (Full list)
             sql_monthly = """
                 SELECT c.business_unit, SUM(p.amount_paid) as total
-                FROM (
-                    SELECT account_number, amount_paid, date_of_payment FROM collections
-                    UNION ALL
-                    SELECT account_number, amount_paid, date_of_payment FROM other_payments
-                ) p
+                FROM all_payments p
                 JOIN customers c ON p.account_number = c.account_number
                 WHERE p.date_of_payment >= :mstart
                 GROUP BY c.business_unit
@@ -745,16 +753,13 @@ def get_dashboard_stats():
             data['monthly_bu'] = [{"bu": bu, "total": m_map.get(bu, 0.0)} for bu in all_bus]
             
             # 2. Weekly Breakdown for current month
+            # Using Postgres TO_CHAR(..., 'W') for week of month (1-5)
             sql_weeks = """
                 SELECT 
                     c.business_unit,
-                    CEILING((DAY(p.date_of_payment) + WEEKDAY(p.date_of_payment - INTERVAL DAY(p.date_of_payment)-1 DAY)) / 7) as week_num,
+                    TO_CHAR(p.date_of_payment, 'W')::integer as week_num,
                     SUM(p.amount_paid) as total
-                FROM (
-                    SELECT account_number, amount_paid, date_of_payment FROM collections
-                    UNION ALL
-                    SELECT account_number, amount_paid, date_of_payment FROM other_payments
-                ) p
+                FROM all_payments p
                 JOIN customers c ON p.account_number = c.account_number
                 WHERE p.date_of_payment >= :mstart
                 GROUP BY c.business_unit, week_num
@@ -776,11 +781,7 @@ def get_dashboard_stats():
             # 3. Daily BU (Full list)
             sql_daily = """
                 SELECT c.business_unit, SUM(p.amount_paid) as total
-                FROM (
-                    SELECT account_number, amount_paid, date_of_payment FROM collections
-                    UNION ALL
-                    SELECT account_number, amount_paid, date_of_payment FROM other_payments
-                ) p
+                FROM all_payments p
                 JOIN customers c ON p.account_number = c.account_number
                 WHERE p.date_of_payment >= :dstart
                 GROUP BY c.business_unit
@@ -794,16 +795,14 @@ def get_dashboard_stats():
                 SELECT c.account_officer as officer, 
                        c.business_unit as bu,
                        SUM(p.amount_paid) as total
-                FROM (
-                    SELECT account_number, amount_paid, date_of_payment FROM collections
-                    UNION ALL
-                    SELECT account_number, amount_paid, date_of_payment FROM other_payments
-                ) p
+                FROM all_payments p
                 JOIN customers c ON p.account_number = c.account_number
                 WHERE p.date_of_payment >= :mstart
                   AND c.business_unit IS NOT NULL AND c.business_unit != ''
                   AND c.account_officer IS NOT NULL AND c.account_officer != ''
-                GROUP BY officer, bu HAVING total > 0 ORDER BY total DESC
+                GROUP BY c.account_officer, c.business_unit 
+                HAVING SUM(p.amount_paid) > 0 
+                ORDER BY total DESC
             """
             res_dmo = conn.execute(text(sql_dmo), {"mstart": month_start}).fetchall()
             dmo_list = [{"dmo": r[0], "bu": r[1], "total": float(r[2])} for r in res_dmo]
@@ -830,7 +829,7 @@ def api_autocomplete():
             SELECT account_number, account_name, account_address
             FROM customers
             WHERE account_officer = :vendor
-              AND (account_number LIKE :q OR account_name LIKE :q OR account_address LIKE :q)
+              AND (CAST(account_number AS TEXT) ILIKE :q OR account_name ILIKE :q OR account_address ILIKE :q)
             LIMIT 30
         """)
         params = {"q": search_term, "vendor": session['user']['username']}
@@ -838,7 +837,7 @@ def api_autocomplete():
         sql = text("""
             SELECT account_number, account_name, account_address
             FROM customers
-            WHERE account_number LIKE :q OR account_name LIKE :q OR account_address LIKE :q
+            WHERE CAST(account_number AS TEXT) ILIKE :q OR account_name ILIKE :q OR account_address ILIKE :q
             LIMIT 30
         """)
         params = {"q": search_term}
@@ -1364,7 +1363,7 @@ def job_form_initial_data():
         return jsonify({"business_units": bus})
     except Exception as e:
         logger.error(f"Job form initial data error: {e}", exc_info=True)
-        return jsonify({"error": "An internal error occurred while retrieving job form configuration."}), 500
+        return jsonify({"error": f"An internal error occurred while retrieving job form configuration: {str(e)}"}), 500
 
 @app.route('/api/job-form/undertakings')
 @login_required
@@ -1377,12 +1376,12 @@ def job_form_undertakings():
             sql = text("""
                 SELECT DISTINCT undertaking 
                 FROM customers 
-                WHERE business_unit IN :bus AND account_officer = :v 
+                WHERE business_unit = ANY(:bus) AND account_officer = :v 
                   AND undertaking IS NOT NULL AND undertaking != '' 
                 ORDER BY undertaking ASC
             """)
             with engine.connect() as conn:
-                res = conn.execute(sql, {"bus": tuple(bus), "v": session['user']['username']}).fetchall()
+                res = conn.execute(sql, {"bus": list(bus), "v": session['user']['username']}).fetchall()
                 undertakings = [r[0] for r in res]
         else:
             undertakings = job_form_service.get_undertakings(bus)
@@ -1419,17 +1418,17 @@ def job_form_feeders():
         return jsonify([])
     try:
         if session['user']['role'] == 'Vendor':
-            ut_clause = "AND undertaking IN :uts" if undertakings else ""
+            ut_clause = "AND undertaking = ANY(:uts)" if undertakings else ""
             sql_str = f"""
                 SELECT DISTINCT feeder 
                 FROM customers 
-                WHERE business_unit IN :bus AND account_officer = :v {ut_clause}
+                WHERE business_unit = ANY(:bus) AND account_officer = :v {ut_clause}
                   AND feeder IS NOT NULL AND feeder != '' 
                 ORDER BY feeder ASC
             """
-            params = {"bus": tuple(bus), "v": session['user']['username']}
+            params = {"bus": list(bus), "v": session['user']['username']}
             if undertakings:
-                params["uts"] = tuple(undertakings)
+                params["uts"] = list(undertakings)
             with engine.connect() as conn:
                 res = conn.execute(text(sql_str), params).fetchall()
                 feeders = [r[0] for r in res]
@@ -1450,21 +1449,21 @@ def job_form_dts():
         return jsonify([])
     try:
         if session['user']['role'] == 'Vendor':
-            ut_clause = "AND undertaking IN :uts" if undertakings else ""
+            ut_clause = "AND undertaking = ANY(:uts)" if undertakings else ""
             sql_str = f"""
                 SELECT DISTINCT dt_name 
                 FROM customers 
-                WHERE business_unit IN :bus AND account_officer = :v AND feeder IN :feeders {ut_clause}
+                WHERE business_unit = ANY(:bus) AND account_officer = :v AND feeder = ANY(:feeders) {ut_clause}
                   AND dt_name IS NOT NULL AND dt_name != '' 
                 ORDER BY dt_name ASC
             """
             params = {
-                "bus": tuple(bus), 
+                "bus": list(bus), 
                 "v": session['user']['username'], 
-                "feeders": tuple(feeders)
+                "feeders": list(feeders)
             }
             if undertakings:
-                params["uts"] = tuple(undertakings)
+                params["uts"] = list(undertakings)
             with engine.connect() as conn:
                 res = conn.execute(text(sql_str), params).fetchall()
                 dts = [r[0] for r in res]
@@ -1643,9 +1642,9 @@ def job_form_export():
         stamp = datetime.now().strftime('%d-%m-%Y')
         filename = secure_filename(f"{off_str}_{form_type}_{stamp}.xlsx")
         
-        # Stream Excel directly into in-memory buffer with memory-optimized engine settings
+        # Stream Excel directly into in-memory buffer - Removing constant_memory to avoid blank columns issue
         buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter', engine_kwargs={'options': {'constant_memory': True}}) as writer:
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             df.to_excel(writer, index=False, sheet_name='Job Form')
         buffer.seek(0)
         
@@ -1717,7 +1716,7 @@ def api_performance_rank():
                 SUM(p.amount_paid) as recovery
             FROM all_payments p
             JOIN customers c ON p.account_number = c.account_number
-            WHERE DATE(p.date_of_payment) BETWEEN :start AND :end
+            WHERE p.date_of_payment\:\:date BETWEEN :start\:\:date AND :end\:\:date
             {otype_clause}
             {vendor_clause}
             GROUP BY c.account_officer, c.business_unit, c.officer_type
@@ -1831,17 +1830,17 @@ def api_performance_export():
         vendor_clause = "AND c.account_officer = :vendor_name" if session['user']['role'] == 'Vendor' else ""
         sql = text(f"""
             SELECT 
-                c.account_officer as 'Officer Name', 
-                c.business_unit as 'Business Unit', 
-                c.officer_type as 'Officer Type',
-                SUM(p.amount_paid) as 'Total Recovery'
+                c.account_officer as "Officer Name", 
+                c.business_unit as "Business Unit", 
+                c.officer_type as "Officer Type",
+                SUM(p.amount_paid) as "Total Recovery"
             FROM all_payments p
             JOIN customers c ON p.account_number = c.account_number
-            WHERE DATE(p.date_of_payment) BETWEEN :start AND :end
+            WHERE p.date_of_payment\:\:date BETWEEN :start\:\:date AND :end\:\:date
             {otype_clause}
             {vendor_clause}
             GROUP BY c.account_officer, c.business_unit, c.officer_type
-            ORDER BY `Total Recovery` DESC
+            ORDER BY "Total Recovery" DESC
         """)
         
         params = {"start": start, "end": end}
@@ -1920,27 +1919,28 @@ def api_payments_preview():
 
     try:
         # Calculate Grand Totals and Total Rows globally using SQL
+        # Using = ANY(:param) which is the most robust way to handle lists in PostgreSQL/psycopg2
         count_sql = text("""
             SELECT 
                 COUNT(*) as total_rows,
                 SUM(p.amount_paid) as total_amount
             FROM all_payments p
             JOIN customers c ON p.account_number = c.account_number
-            WHERE c.business_unit IN :bus
-            AND c.officer_type IN :otypes
-            AND c.account_officer IN :onames
-            AND DATE(p.date_of_payment) BETWEEN :start AND :end
+            WHERE c.business_unit = ANY(:bus)
+            AND c.officer_type = ANY(:otypes)
+            AND c.account_officer = ANY(:onames)
+            AND p.date_of_payment\:\:date BETWEEN :start\:\:date AND :end\:\:date
         """)
         
         with engine.connect() as conn:
-            params = {
-                "bus": tuple(bus),
-                "otypes": tuple(otypes),
-                "onames": tuple(onames),
+            params_dict = {
+                "bus": list(bus),
+                "otypes": list(otypes),
+                "onames": list(onames),
                 "start": start_date,
                 "end": end_date
             }
-            count_res = conn.execute(count_sql, params).fetchone()
+            count_res = conn.execute(count_sql, params_dict).fetchone()
             total_rows = int(count_res[0]) if count_res and count_res[0] else 0
             total_amount_paid = float(count_res[1]) if count_res and count_res[1] else 0.0
             
@@ -1978,16 +1978,16 @@ def api_payments_preview():
             FROM all_payments p
             JOIN customers c ON p.account_number = c.account_number
             LEFT JOIN account_financial_summary afs ON p.account_number = afs.account_number
-            WHERE c.business_unit IN :bus
-            AND c.officer_type IN :otypes
-            AND c.account_officer IN :onames
-            AND DATE(p.date_of_payment) BETWEEN :start AND :end
+            WHERE c.business_unit = ANY(:bus)
+            AND c.officer_type = ANY(:otypes)
+            AND c.account_officer = ANY(:onames)
+            AND p.date_of_payment\:\:date BETWEEN :start\:\:date AND :end\:\:date
             ORDER BY p.date_of_payment DESC
             {limit_clause}
         """)
         
         with engine.connect() as conn:
-            results = conn.execute(sql, params).fetchall()
+            results = conn.execute(sql, params_dict).fetchall()
             
         records = []
         for r in results:
@@ -2012,7 +2012,7 @@ def api_payments_preview():
         })
     except Exception as e:
         logger.error(f"Payments preview query error: {e}", exc_info=True)
-        return jsonify({"error": "An internal error occurred while generating the payments preview."}), 500
+        return jsonify({"error": f"An internal error occurred while generating the payments preview: {str(e)}"}), 500
 
 @app.route('/api/payments/export', methods=['POST'])
 @login_required
@@ -2036,72 +2036,36 @@ def api_payments_export():
         return jsonify({"error": "Missing filters"}), 400
 
     try:
-        # Optimized SQL: Avoiding heavy views (account_financial_summary and all_payments)
-        # We calculate the required metrics only for the accounts that have payments in the date range.
+        # Simplified SQL: Using the same views as the preview for consistency and performance
         sql = text("""
             SELECT 
-                p.account_number as 'Account Number', 
-                c.account_name as 'Account Name', 
-                c.account_address as 'Account Address',
-                c.business_unit as 'Business Unit', 
-                c.undertaking as 'Undertaking', 
-                c.dt_name as 'DT Name', 
-                c.closing_balance as 'Closing Balance',
-                p.amount_paid as 'Amount Paid', 
-                p.date_of_payment as 'Date of Payment', 
-                COALESCE(d.total_discounts, 0) as 'Total Discount', 
-                COALESCE(a.total_adjustments, 0) as 'Total Adjustment', 
-                COALESCE(op.other_paid, 0) as 'Other Payment',
-                (c.closing_balance - COALESCE(tp.total_paid, 0) - COALESCE(d.total_discounts, 0) - COALESCE(a.total_adjustments, 0)) as 'Outstanding Balance',
-                CASE 
-                    WHEN (COALESCE(tp.total_paid, 0) >= 0.3 * c.closing_balance) AND (c.closing_balance - COALESCE(tp.total_paid, 0) - COALESCE(d.total_discounts, 0) - COALESCE(a.total_adjustments, 0) > 0)
-                    THEN 'Yes' ELSE 'No' 
-                END as 'Payment Plan (Yes/No)',
-                c.account_officer as 'Account Officer'
-            FROM (
-                SELECT account_number, amount_paid, date_of_payment FROM collections
-                WHERE DATE(date_of_payment) BETWEEN :start AND :end
-                UNION ALL
-                SELECT account_number, amount_paid, date_of_payment FROM other_payments
-                WHERE DATE(date_of_payment) BETWEEN :start AND :end
-            ) p
+                p.account_number as "Account Number", 
+                c.account_name as "Account Name", 
+                c.account_address as "Account Address",
+                c.business_unit as "Business Unit", 
+                c.undertaking as "Undertaking", 
+                c.dt_name as "DT Name", 
+                c.closing_balance as "Closing Balance",
+                p.amount_paid as "Amount Paid", 
+                p.date_of_payment as "Date of Payment", 
+                COALESCE(afs.total_discounts, 0) as "Total Discount", 
+                COALESCE(afs.total_adjustments, 0) as "Total Adjustment", 
+                (SELECT SUM(amount_paid) FROM other_payments WHERE account_number = p.account_number AND date_of_payment\:\:date BETWEEN :start\:\:date AND :end\:\:date) as "Other Payment",
+                COALESCE(afs.outstanding_balance, 0) as "Outstanding Balance",
+                COALESCE(afs.payment_plan, 'No') as "Payment Plan (Yes/No)",
+                c.account_officer as "Account Officer"
+            FROM all_payments p
             JOIN customers c ON p.account_number = c.account_number
-            -- Total Payments for Outstanding Calculation
-            LEFT JOIN (
-                SELECT account_number, SUM(amount_paid) as total_paid FROM (
-                    SELECT account_number, amount_paid FROM collections
-                    UNION ALL
-                    SELECT account_number, amount_paid FROM other_payments
-                ) combined GROUP BY account_number
-            ) tp ON p.account_number = tp.account_number
-            -- Other Payments in date range
-            LEFT JOIN (
-                SELECT account_number, SUM(amount_paid) as other_paid FROM other_payments 
-                WHERE DATE(date_of_payment) BETWEEN :start AND :end
-                GROUP BY account_number
-            ) op ON p.account_number = op.account_number
-            -- Discounts (Approved only)
-            LEFT JOIN (
-                SELECT account_number, SUM(discounted_amount) as total_discounts 
-                FROM discounts 
-                WHERE (LOWER(status) = 'approved' OR LOWER(user_who_approved) LIKE '%okoye%' OR LOWER(user_who_approved) LIKE '%forstinus%')
-                GROUP BY account_number
-            ) d ON p.account_number = d.account_number
-            -- Adjustments (Approved only)
-            LEFT JOIN (
-                SELECT account_number, SUM(adjustment_amount) as total_adjustments 
-                FROM adjustments 
-                WHERE (LOWER(status) = 'approved' OR LOWER(user_who_approved_adjustment) LIKE '%okoye%' OR LOWER(user_who_approved_adjustment) LIKE '%forstinus%')
-                GROUP BY account_number
-            ) a ON p.account_number = a.account_number
-            WHERE c.business_unit IN :bus
-            AND c.officer_type IN :otypes
-            AND c.account_officer IN :onames
+            LEFT JOIN account_financial_summary afs ON p.account_number = afs.account_number
+            WHERE c.business_unit = ANY(:bus)
+            AND c.officer_type = ANY(:otypes)
+            AND c.account_officer = ANY(:onames)
+            AND p.date_of_payment\:\:date BETWEEN :start\:\:date AND :end\:\:date
             ORDER BY p.date_of_payment DESC
         """)
         
         with engine.connect() as conn:
-            # Explicitly cast to list for SQLAlchemy IN clause safety
+            # Fetch data using Pandas read_sql which is reliable for large datasets
             df = pd.read_sql(sql, conn, params={
                 "bus": list(bus),
                 "otypes": list(otypes),
@@ -2113,7 +2077,7 @@ def api_payments_export():
         if df.empty:
             return jsonify({"error": "No data found for selected criteria"}), 404
 
-        # Convert the 'Date of Payment' column to a clean string format %Y-%m-%d %H:%M:%S before Excel export
+        # Clean up date format for Excel
         if 'Date of Payment' in df.columns:
             df['Date of Payment'] = pd.to_datetime(df['Date of Payment']).dt.strftime('%Y-%m-%d %H:%M:%S')
             
@@ -2124,7 +2088,7 @@ def api_payments_export():
             "end": end_date
         })
         
-        # Stream Excel directly into in-memory buffer
+        # Stream Excel directly into in-memory buffer - Removing constant_memory to avoid blank columns issue
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             df.to_excel(writer, index=False, sheet_name='Payments')
@@ -2166,25 +2130,32 @@ def api_customers_preview():
 
     try:
         # Calculate Grand Totals and Total Rows globally using SQL
+        # Optimized with LATERAL joins for performance on filtered results
         count_sql = text("""
             SELECT 
                 COUNT(*) as total_rows,
                 SUM(COALESCE(afs.total_payments, 0)) as sum_payments,
                 SUM(c.closing_balance - COALESCE(afs.total_payments, 0) - COALESCE(afs.total_discounts, 0) - COALESCE(afs.total_adjustments, 0)) as sum_outstanding
             FROM customers c
-            LEFT JOIN account_financial_summary afs ON c.account_number = afs.account_number
-            WHERE c.business_unit IN :bus
-            AND c.officer_type IN :otypes
-            AND c.account_officer IN :onames
+            LEFT JOIN LATERAL (
+                SELECT 
+                    (SELECT COALESCE(SUM(amount_paid),0) FROM collections WHERE account_number = c.account_number) + 
+                    (SELECT COALESCE(SUM(amount_paid),0) FROM other_payments WHERE account_number = c.account_number) as total_payments,
+                    (SELECT COALESCE(SUM(discounted_amount),0) FROM discounts WHERE account_number = c.account_number AND (lower(status) = 'approved' OR lower(user_who_approved) LIKE '%okoye%' OR lower(user_who_approved) LIKE '%forstinus%')) as total_discounts,
+                    (SELECT COALESCE(SUM(adjustment_amount),0) FROM adjustments WHERE account_number = c.account_number AND (lower(status) = 'approved' OR lower(user_who_approved_adjustment) LIKE '%okoye%' OR lower(user_who_approved_adjustment) LIKE '%forstinus%')) as total_adjustments
+            ) afs ON true
+            WHERE c.business_unit = ANY(:bus)
+            AND c.officer_type = ANY(:otypes)
+            AND c.account_officer = ANY(:onames)
         """)
         
         with engine.connect() as conn:
-            params = {
-                "bus": tuple(bus),
-                "otypes": tuple(otypes),
-                "onames": tuple(onames)
+            params_dict_cust = {
+                "bus": list(bus),
+                "otypes": list(otypes),
+                "onames": list(onames)
             }
-            count_res = conn.execute(count_sql, params).fetchone()
+            count_res = conn.execute(count_sql, params_dict_cust).fetchone()
             total_rows = int(count_res[0]) if count_res and count_res[0] else 0
             total_payments_global = float(count_res[1]) if count_res and count_res[1] else 0.0
             total_outstanding_global = float(count_res[2]) if count_res and count_res[2] else 0.0
@@ -2205,6 +2176,7 @@ def api_customers_preview():
             limit_clause = f" LIMIT {per_page} OFFSET {offset}"
 
         # Complex query to get all requested fields, aligning with main_app.py standards
+        # Optimized with LATERAL joins and scalar subqueries for performance
         sql = text(f"""
             SELECT 
                 c.account_number, 
@@ -2215,25 +2187,29 @@ def api_customers_preview():
                 c.account_officer, 
                 c.feeder as feeder_name,
                 c.dt_name,
-                v.phone_number,
+                (SELECT phone_number FROM validation WHERE account_number = c.account_number ORDER BY id DESC LIMIT 1) as phone_number,
                 c.closing_balance,
                 COALESCE(afs.total_payments, 0) as total_payments,
                 COALESCE(afs.total_discounts, 0) as total_discounts_approved,
                 COALESCE(afs.total_adjustments, 0) as total_adjustments_approved,
-                lp.last_payment_date
+                (SELECT MAX(date_of_payment) FROM collections WHERE account_number = c.account_number) as last_payment_date
             FROM customers c
-            LEFT JOIN account_financial_summary afs ON c.account_number = afs.account_number
-            LEFT JOIN (SELECT account_number, MAX(date_of_payment) as last_payment_date FROM collections GROUP BY account_number) lp ON c.account_number = lp.account_number
-            LEFT JOIN (SELECT account_number, phone_number FROM validation WHERE id IN (SELECT MAX(id) FROM validation GROUP BY account_number)) v ON c.account_number = v.account_number
-            WHERE c.business_unit IN :bus
-            AND c.officer_type IN :otypes
-            AND c.account_officer IN :onames
+            LEFT JOIN LATERAL (
+                SELECT 
+                    (SELECT COALESCE(SUM(amount_paid),0) FROM collections WHERE account_number = c.account_number) + 
+                    (SELECT COALESCE(SUM(amount_paid),0) FROM other_payments WHERE account_number = c.account_number) as total_payments,
+                    (SELECT COALESCE(SUM(discounted_amount),0) FROM discounts WHERE account_number = c.account_number AND (lower(status) = 'approved' OR lower(user_who_approved) LIKE '%okoye%' OR lower(user_who_approved) LIKE '%forstinus%')) as total_discounts,
+                    (SELECT COALESCE(SUM(adjustment_amount),0) FROM adjustments WHERE account_number = c.account_number AND (lower(status) = 'approved' OR lower(user_who_approved_adjustment) LIKE '%okoye%' OR lower(user_who_approved_adjustment) LIKE '%forstinus%')) as total_adjustments
+            ) afs ON true
+            WHERE c.business_unit = ANY(:bus)
+            AND c.officer_type = ANY(:otypes)
+            AND c.account_officer = ANY(:onames)
             ORDER BY c.closing_balance DESC
             {limit_clause}
         """)
         
         with engine.connect() as conn:
-            results = conn.execute(sql, params).fetchall()
+            results = conn.execute(sql, params_dict_cust).fetchall()
             
         processed_data = []
         for r in results:
@@ -2282,67 +2258,62 @@ def api_customers_export():
         return jsonify({"error": "Missing filters"}), 400
 
     try:
-        # Optimized SQL using account_financial_summary view for better performance
-        # This matches the logic in api_customers_preview but for all records.
+        # Optimized SQL using LATERAL joins for better performance on filtered results
         sql = text("""
             SELECT 
-                c.account_number as 'Account Number', 
-                c.account_name as 'Account Name', 
-                c.account_address as 'Account Address', 
-                c.business_unit as 'Business Unit', 
-                c.undertaking as 'Undertaking',
-                c.account_officer as 'Account Officer', 
-                c.feeder as 'Feeder Name',
-                c.dt_name as 'DT Name',
-                v.phone_number as 'Phone Number',
-                c.closing_balance as 'Closing Balance',
+                c.account_number as "Account Number", 
+                c.account_name as "Account Name", 
+                c.account_address as "Account Address", 
+                c.business_unit as "Business Unit", 
+                c.undertaking as "Undertaking",
+                c.account_officer as "Account Officer", 
+                c.feeder as "Feeder Name",
+                c.dt_name as "DT Name",
+                (SELECT phone_number FROM validation WHERE account_number = c.account_number ORDER BY id DESC LIMIT 1) as "Phone Number",
+                c.closing_balance as "Closing Balance",
                 COALESCE(afs.total_payments, 0) as total_payments,
                 COALESCE(afs.total_discounts, 0) as total_discounts_approved,
                 COALESCE(afs.total_adjustments, 0) as total_adjustments_approved,
-                lp.last_payment_date as 'Last Payment Date'
+                (SELECT MAX(date_of_payment) FROM collections WHERE account_number = c.account_number) as "Last Payment Date"
             FROM customers c
-            LEFT JOIN account_financial_summary afs ON c.account_number = afs.account_number
-            LEFT JOIN (
-                SELECT account_number, MAX(date_of_payment) as last_payment_date 
-                FROM collections 
-                GROUP BY account_number
-            ) lp ON c.account_number = lp.account_number
-            LEFT JOIN (
-                SELECT v1.account_number, v1.phone_number 
-                FROM validation v1
-                INNER JOIN (
-                    SELECT account_number, MAX(id) as max_id 
-                    FROM validation 
-                    GROUP BY account_number
-                ) v2 ON v1.id = v2.max_id
-            ) v ON c.account_number = v.account_number
-            WHERE c.business_unit IN :bus
-            AND c.officer_type IN :otypes
-            AND c.account_officer IN :onames
+            LEFT JOIN LATERAL (
+                SELECT 
+                    (SELECT COALESCE(SUM(amount_paid),0) FROM collections WHERE account_number = c.account_number) + 
+                    (SELECT COALESCE(SUM(amount_paid),0) FROM other_payments WHERE account_number = c.account_number) as total_payments,
+                    (SELECT COALESCE(SUM(discounted_amount),0) FROM discounts WHERE account_number = c.account_number AND (lower(status) = 'approved' OR lower(user_who_approved) LIKE '%%okoye%%' OR lower(user_who_approved) LIKE '%%forstinus%%')) as total_discounts,
+                    (SELECT COALESCE(SUM(adjustment_amount),0) FROM adjustments WHERE account_number = c.account_number AND (lower(status) = 'approved' OR lower(user_who_approved_adjustment) LIKE '%%okoye%%' OR lower(user_who_approved_adjustment) LIKE '%%forstinus%%')) as total_adjustments
+            ) afs ON true
+            WHERE c.business_unit = ANY(:bus)
+            AND c.officer_type = ANY(:otypes)
+            AND c.account_officer = ANY(:onames)
             ORDER BY c.closing_balance DESC
         """)
         
         with engine.connect() as conn:
             df = pd.read_sql(sql, conn, params={
-                "bus": tuple(bus),
-                "otypes": tuple(otypes),
-                "onames": tuple(onames)
+                "bus": list(bus),
+                "otypes": list(otypes),
+                "onames": list(onames)
             })
             
         if df.empty:
             return jsonify({"error": "No data found for selected criteria"}), 404
 
         # Calculate derived fields in Pandas
-        df['Total Payments'] = df['total_payments'].astype(float)
-        df['Valid Discount Amount'] = df['total_discounts_approved'].astype(float)
-        df['Valid Adjustment Amount'] = df['total_adjustments_approved'].astype(float)
-        df['Closing Balance'] = df['Closing Balance'].astype(float)
+        df['Total Payments'] = pd.to_numeric(df['total_payments'], errors='coerce').fillna(0)
+        df['Valid Discount Amount'] = pd.to_numeric(df['total_discounts_approved'], errors='coerce').fillna(0)
+        df['Valid Adjustment Amount'] = pd.to_numeric(df['total_adjustments_approved'], errors='coerce').fillna(0)
+        df['Closing Balance'] = pd.to_numeric(df['Closing Balance'], errors='coerce').fillna(0)
         
         df['Outstanding Balance'] = df['Closing Balance'] - df['Total Payments'] - df['Valid Discount Amount'] - df['Valid Adjustment Amount']
         
-        # Vectorized payment plan status check (much faster than df.apply)
+        # Vectorized payment plan status check
         is_pp = (df['Total Payments'] >= 0.3 * df['Closing Balance']) & (df['Outstanding Balance'] > 0)
         df['Current Payment-Plan Status'] = np.where(is_pp, "Yes", "No")
+        
+        # Ensure Last Payment Date is string for Excel compatibility if it's a datetime
+        if 'Last Payment Date' in df.columns:
+            df['Last Payment Date'] = df['Last Payment Date'].astype(str).replace('None', '')
         
         export_df = df[[
             'Account Number', 'Account Name', 'Account Address', 'Business Unit', 
@@ -2357,7 +2328,7 @@ def api_customers_export():
             "otypes": otypes
         })
         
-        # Stream Excel directly into in-memory buffer
+        # Stream Excel directly into in-memory buffer - Removing constant_memory to avoid blank columns issue
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             export_df.to_excel(writer, index=False, sheet_name='Customers')

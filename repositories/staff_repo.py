@@ -148,15 +148,15 @@ class StaffRepository:
                 params["et"] = filters["event_type"]
 
             if filters.get("username"):
-                sql += " AND username LIKE :u"
+                sql += " AND username ILIKE :u"
                 params["u"] = f"%{filters['username']}%"
 
             if filters.get("tab_id"):
-                sql += " AND tab_id LIKE :t"
+                sql += " AND tab_id ILIKE :t"
                 params["t"] = f"%{filters['tab_id']}%"
 
             if filters.get("search"):
-                sql += " AND (action LIKE :s OR details LIKE :s)"
+                sql += " AND (action ILIKE :s OR details ILIKE :s)"
                 params["s"] = f"%{filters['search']}%"
 
             sql += " ORDER BY timestamp DESC LIMIT 1000"

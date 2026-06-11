@@ -1,74 +1,103 @@
 from utils.security import SecurityManager # type: ignore
 from datetime import datetime, timedelta
+import logging
 
 class AuthService:
-    def __init__(self, staff_repo, session_manager):
+    def __init__(self, staff_repo, session_manager, supabase_client=None):
         self.repo = staff_repo
         self.session = session_manager
+        self.supabase = supabase_client
 
     def log_attempt(self, username, action, details=None):
         """Encapsulated method for external UI components to log auth attempts."""
         self.repo.log_activity(username, action, details, event_type='MINOR')
 
     def login(self, username, password):
+        # Requirements: Supabase Auth uses email. Map username -> email
+        email = f"{username.lower()}@ikejaelectric.com"
+        password_str = str(password).lower()
 
+        # 1. Attempt Supabase Auth Login
+        if self.supabase:
+            try:
+                res = self.supabase.auth.sign_in_with_password({"email": email, "password": password_str})
+                if res.user:
+                    # Success! Fetch extra details from staff table
+                    user = self.repo.get_user_by_username(username)
+                    if user:
+                        self.repo.update_last_online_login(username)
+                        self.session.reset_login_attempts(username)
+                        self.session.update_activity()
+                        self.repo.log_activity(username, "SUPABASE_LOGIN_SUCCESS", event_type='MAJOR')
+                        
+                        return self._build_user_dict(user)
+            except Exception as e:
+                # If user doesn't exist in Supabase yet, attempt "On-the-fly Migration"
+                logging.info(f"Supabase login failed for {username}, attempting migration: {e}")
+
+        # 2. On-the-fly Migration / Fallback Login
         user = self.repo.get_user_by_username(username)
         if not user:
             self.session.track_login_attempt(username)
             self.repo.log_activity(username, "LOGIN_FAILED", "User not found", event_type='MAJOR')
             return None
 
-        # Check if password is bcrypt hashed or plain (for migration)
-        # Requirement: Password must be lowercase for comparison
-        password = str(password).lower()
-        
-        # Using mapping-style access for Row/Dict compatibility
+        # Check legacy password
         stored_pwd = user.get('password_hash') if isinstance(user, dict) else (user._mapping.get('password_hash') if hasattr(user, '_mapping') else user['password_hash'])
         is_valid = False
         
         try:
             if stored_pwd and stored_pwd.startswith("$2b$"): # Bcrypt signature
-                is_valid = SecurityManager.verify_password(password, stored_pwd)
+                is_valid = SecurityManager.verify_password(password_str, stored_pwd)
             else:
-                # Temporary plain text check for migration
-                is_valid = (password == stored_pwd)
-                if is_valid:
-                    # Auto-upgrade to hashed password
-                    new_hash = SecurityManager.hash_password(password)
-                    self.repo.update_staff_password(username, new_hash) # Use specific update method
+                is_valid = (password_str == stored_pwd)
         except Exception as e:
-            print(f"Login Hash Verification Error: {e}")
+            logging.error(f"Legacy Hash Verification Error: {e}")
             is_valid = False
 
         if is_valid:
-            # Update last_online_login
-            self.repo.update_last_online_login(username)
+            # Legacy password matches! Migrate to Supabase Auth if client is available
+            if self.supabase:
+                try:
+                    # Create user in Supabase Auth
+                    # Note: Using sign_up. If they already exist, this might fail or send email depending on config.
+                    # Better to use service role to create users without email confirmation if possible.
+                    self.supabase.auth.sign_up({"email": email, "password": password_str})
+                    logging.info(f"Successfully migrated {username} to Supabase Auth")
+                except Exception as mig_err:
+                    logging.error(f"Migration error for {username}: {mig_err}")
 
+            self.repo.update_last_online_login(username)
             self.session.reset_login_attempts(username)
             self.session.update_activity()
-            self.repo.log_activity(username, "LOGIN_SUCCESS", event_type='MAJOR')
+            self.repo.log_activity(username, "LOGIN_SUCCESS_MIGRATED", event_type='MAJOR')
             
-            # Use mapping access to build user dict
-            u_mapping = user if isinstance(user, dict) else (user._mapping if hasattr(user, '_mapping') else user)
-            
-            # Synthesize full_name from first_name and surname
-            fname = u_mapping.get('first_name', '') if hasattr(u_mapping, 'get') else u_mapping['first_name']
-            sname = u_mapping.get('surname', '') if hasattr(u_mapping, 'get') else u_mapping['surname']
-            synth_full_name = f"{fname or ''} {sname or ''}".strip()
-            
-            return {
-                "id": u_mapping.get('id') if hasattr(u_mapping, 'get') else u_mapping['id'],
-                "username": u_mapping.get('username') if hasattr(u_mapping, 'get') else u_mapping['username'],
-                "staff_id": u_mapping.get('staff_id') if hasattr(u_mapping, 'get') else u_mapping['staff_id'],
-                "full_name": synth_full_name,
-                "role": u_mapping.get('role') if hasattr(u_mapping, 'get') else u_mapping['role']
-            }
+            return self._build_user_dict(user)
         else:
             self.session.track_login_attempt(username)
             self.repo.log_activity(username, "LOGIN_FAILED", "Invalid password", event_type='MAJOR')
             return None
 
+    def _build_user_dict(self, user):
+        u_mapping = user if isinstance(user, dict) else (user._mapping if hasattr(user, '_mapping') else user)
+        fname = u_mapping.get('first_name', '') if hasattr(u_mapping, 'get') else u_mapping['first_name']
+        sname = u_mapping.get('surname', '') if hasattr(u_mapping, 'get') else u_mapping['surname']
+        synth_full_name = f"{fname or ''} {sname or ''}".strip()
+        
+        return {
+            "id": u_mapping.get('id') if hasattr(u_mapping, 'get') else u_mapping['id'],
+            "username": u_mapping.get('username') if hasattr(u_mapping, 'get') else u_mapping['username'],
+            "staff_id": u_mapping.get('staff_id') if hasattr(u_mapping, 'get') else u_mapping['staff_id'],
+            "full_name": synth_full_name,
+            "role": u_mapping.get('role') if hasattr(u_mapping, 'get') else u_mapping['role']
+        }
+
     def logout(self, username):
+        if self.supabase:
+            try:
+                self.supabase.auth.sign_out()
+            except:
+                pass
         self.repo.log_activity(username, "LOGOUT", event_type='MAJOR')
 
     def reset_password_to_default(self, email):

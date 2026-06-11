@@ -6,11 +6,11 @@ class JobFormService:
 
     def get_tables_and_columns(self):
         with self.engine.connect() as conn:
-            tables = [row[0] for row in conn.execute(text("SHOW TABLES"))]
+            tables = [row[0] for row in conn.execute(text("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"))]
             table_columns = {}
             for table in tables:
                 if not table.startswith("staging_"):
-                    columns = [row[0] for row in conn.execute(text(f"DESCRIBE `{table}`"))]
+                    columns = [row[0] for row in conn.execute(text(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table}'"))]
                     table_columns[table] = columns
             return table_columns
 
@@ -117,7 +117,7 @@ class JobFormService:
 
         joins = """
             LEFT JOIN (SELECT account_number, SUM(amount_paid) as total_payments FROM all_payments GROUP BY account_number) p ON c.account_number = p.account_number
-            LEFT JOIN (SELECT account_number, MAX(NULLIF(date_of_payment, '0000-00-00')) as last_payment_date FROM collections GROUP BY account_number) coll ON c.account_number = coll.account_number
+            LEFT JOIN (SELECT account_number, MAX(date_of_payment) as last_payment_date FROM collections GROUP BY account_number) coll ON c.account_number = coll.account_number
             LEFT JOIN (SELECT account_number, SUM(amount_paid) as total_other FROM other_payments GROUP BY account_number) o ON c.account_number = o.account_number
             LEFT JOIN (
                 SELECT account_number, 
@@ -143,7 +143,7 @@ class JobFormService:
         
         if ftype == "Defaulted payment Plan":
             filter_clauses.append(f"{pp_cond} = 'Yes'")
-            filter_clauses.append("(coll.last_payment_date IS NULL OR DATEDIFF(CURDATE(), coll.last_payment_date) > 30)")
+            filter_clauses.append("(coll.last_payment_date IS NULL OR (CURRENT_DATE - coll.last_payment_date::date) > 30)")
         elif ftype == "Exclude Payment Plan":
             filter_clauses.append(f"{pp_cond} = 'No'")
             
@@ -184,7 +184,7 @@ class JobFormService:
             acc_list = df['account_number'].unique().tolist()
             if acc_list:
                 # Use parameterized query for safety and performance
-                val_sql = text("SELECT account_number, phone_number FROM validation WHERE account_number IN :accs")
+                val_sql = text("SELECT account_number, phone_number FROM validation WHERE account_number = ANY(:accs)")
                 val_df = pd.read_sql(val_sql, conn, params={"accs": acc_list})
                 if not val_df.empty:
                     val_df = val_df.sort_values('account_number').groupby('account_number').last().reset_index()

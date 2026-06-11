@@ -18,36 +18,36 @@ def load_env():
 
 def get_db_engine(db_pass=None, include_db=True):
     """
-    Creates and returns a SQLAlchemy engine for the AWS RDS database.
+    Creates and returns a SQLAlchemy engine for the Supabase PostgreSQL database.
     Loads credentials from .env or prompts user if missing.
     If include_db is False, connects to the server without specifying a database.
     """
     load_env() # Ensure env is loaded before getting vars
     
-    # AWS RDS configuration
-    db_user = os.getenv("DB_USER", "admin")
+    # Supabase PostgreSQL configuration
+    db_user = os.getenv("DB_USER", "postgres")
     db_pass = db_pass or os.getenv("DB_PASS")
-    db_name = os.getenv("DB_NAME", "dmc_web_project")
+    db_name = os.getenv("DB_NAME", "postgres")
     
     if db_pass == "[AWS RDS password]":
         db_pass = None
 
-    db_host = os.getenv("DB_HOST", "rds-endpoint.amazonaws.com")
-    db_port = os.getenv("DB_PORT", "3306")
+    db_host = os.getenv("DB_HOST", "aws-0-eu-west-1.pooler.supabase.com")
+    db_port = os.getenv("DB_PORT", "5432")
     db_ssl_ca = os.getenv("DB_SSL_CA")
 
     encoded_pw = quote_plus(str(db_pass)) if db_pass else ""
     
-    # AWS RDS MySQL connection string
+    # Supabase PostgreSQL connection string
     if include_db:
-        conn_str = f"mysql+pymysql://{db_user}:{encoded_pw}@{db_host}:{db_port}/{db_name}?charset=utf8mb4"
+        conn_str = f"postgresql+psycopg2://{db_user}:{encoded_pw}@{db_host}:{db_port}/{db_name}"
     else:
-        conn_str = f"mysql+pymysql://{db_user}:{encoded_pw}@{db_host}:{db_port}/?charset=utf8mb4"
+        conn_str = f"postgresql+psycopg2://{db_user}:{encoded_pw}@{db_host}:{db_port}/postgres"
     
+    # Supabase Connection Arguments
     connect_args = {
-        'connect_timeout': 15,
-        'read_timeout': 30,
-        'write_timeout': 30
+        'sslmode': 'require',
+        'connect_timeout': 15
     }
     
     if db_ssl_ca:
@@ -56,7 +56,8 @@ def get_db_engine(db_pass=None, include_db=True):
             ca_path = os.path.join(get_project_folder(), ca_path)
             
         if os.path.exists(ca_path):
-            connect_args['ssl'] = {'ca': ca_path}
+            connect_args['sslrootcert'] = ca_path
+            connect_args['sslmode'] = 'verify-full'
         else:
             print(f"[WARNING] SSL CA file not found at: {ca_path}")
 

@@ -7,7 +7,7 @@ class ExportService:
 
     def get_table_names(self):
         with self.engine.connect() as conn:
-            return [row[0] for row in conn.execute(text("SHOW TABLES"))]
+            return [row[0] for row in conn.execute(text("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"))]
 
     def get_table_preview(self, table_name):
         with self.engine.connect() as conn:
@@ -22,12 +22,12 @@ class ExportService:
             if filters.get("search"):
                 q = filters["search"]
                 try:
-                    res = conn.execute(text(f"DESCRIBE `{table_name}`"))
+                    res = conn.execute(text(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}'"))
                     cols = [row[0] for row in res.fetchall()]
                     search_parts = []
                     for col in cols:
                         param_name = f"sq_{col.replace(' ', '_')}"
-                        search_parts.append(f"`{col}` LIKE :{param_name}")
+                        search_parts.append(f"\"{col}\" ILIKE :{param_name}")
                         params[param_name] = f"%{q}%"
                     if search_parts:
                         where_clauses.append(f"({' OR '.join(search_parts)})")
@@ -39,17 +39,17 @@ class ExportService:
                 for col, val in filters["column_filters"].items():
                     if val and val != col:
                         param_name = f"col_{col.replace(' ', '_')}"
-                        where_clauses.append(f"`{col}` LIKE :{param_name}")
+                        where_clauses.append(f"\"{col}\" ILIKE :{param_name}")
                         params[param_name] = f"%{val}%"
 
             where_sql = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
             
             # Get total count
-            count_sql = f"SELECT COUNT(*) FROM `{table_name}`{where_sql}"
+            count_sql = f"SELECT COUNT(*) FROM \"{table_name}\"{where_sql}"
             total = conn.execute(text(count_sql), params).scalar()
 
             # Get data with limit
-            sql = f"SELECT * FROM `{table_name}`{where_sql} LIMIT 1000"
+            sql = f"SELECT * FROM \"{table_name}\"{where_sql} LIMIT 1000"
             df = pd.read_sql(text(sql), conn, params=params)
 
             return df, total
@@ -63,12 +63,12 @@ class ExportService:
             if filters.get("search"):
                 q = filters["search"]
                 try:
-                    res = conn.execute(text(f"DESCRIBE `{table_name}`"))
+                    res = conn.execute(text(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}'"))
                     cols = [row[0] for row in res.fetchall()]
                     search_parts = []
                     for col in cols:
                         param_name = f"sq_{col.replace(' ', '_')}"
-                        search_parts.append(f"`{col}` LIKE :{param_name}")
+                        search_parts.append(f"\"{col}\" ILIKE :{param_name}")
                         params[param_name] = f"%{q}%"
                     if search_parts:
                         where_clauses.append(f"({' OR '.join(search_parts)})")
@@ -80,11 +80,11 @@ class ExportService:
                 for col, val in filters["column_filters"].items():
                     if val and val != col:
                         param_name = f"col_{col.replace(' ', '_')}"
-                        where_clauses.append(f"`{col}` LIKE :{param_name}")
+                        where_clauses.append(f"\"{col}\" ILIKE :{param_name}")
                         params[param_name] = f"%{val}%"
 
             where_sql = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
-            sql = f"SELECT * FROM `{table_name}`{where_sql}"
+            sql = f"SELECT * FROM \"{table_name}\"{where_sql}"
             
             df = pd.read_sql(text(sql), conn, params=params)
             

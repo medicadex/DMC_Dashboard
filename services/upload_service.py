@@ -156,7 +156,7 @@ class UploadService:
 
         with self.engine.begin() as conn:
             # Fetch actual columns that exist in the RDS target table
-            res_cols = conn.execute(text(f"DESCRIBE `{table_name}`"))
+            res_cols = conn.execute(text(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}'"))
             target_cols = [row[0] for row in res_cols.fetchall()]
 
             cols_to_insert = [c for c in df_mapped.columns if c in target_cols]
@@ -186,44 +186,64 @@ class UploadService:
                     if progress_callback:
                         progress_callback(int(((i + 1) / num_chunks) * 90))
 
-                # ── Step 2: Merge staging → live table on RDS ──────────────────
-                # Deduplication strategy: Use ON DUPLICATE KEY UPDATE to avoid wiping skipped columns
+                # ── Step 2: Merge staging → live table on Supabase ──────────────────
+                # Deduplication strategy: Use ON CONFLICT to match RDS behavior
+                #   - UPSERT_TABLES → ON CONFLICT (...) DO UPDATE (REPLACE)
+                #   - IGNORE_TABLES → ON CONFLICT (...) DO NOTHING (INSERT IGNORE)
+                
                 conflict_keys = {
                     'customers': 'account_number',
                     'staff': 'staff_id',
                     'performance_config': 'bu_name',
                     'discounts': 'transaction_id',
                     'adjustments': 'transaction_id',
-                    'resolutions': 'transaction_id'
+                    'resolutions': 'transaction_id',
+                    'collections': 'transaction_id',
+                    'other_payments': 'transaction_id',
+                    'validation': 'transaction_id',
+                    'disconnections': 'transaction_id'
                 }
                 
                 conflict_key = conflict_keys.get(table_name)
-                escaped_cols = ", ".join(f"`{c}`" for c in cols_to_insert)
+                escaped_cols = ", ".join(f'"{c}"' for c in cols_to_insert)
                 
                 if conflict_key and conflict_key in cols_to_insert:
-                    update_cols = [c for c in cols_to_insert if c != conflict_key]
-                    if update_cols:
-                        verb = "REPLACE"
-                        update_clause = ", ".join(
-                            f"`{c}` = CASE WHEN VALUES(`{c}`) IS NULL OR VALUES(`{c}`) = '' OR VALUES(`{c}`) = 'nan' THEN `{table_name}`.`{c}` ELSE VALUES(`{c}`) END"
-                            for c in update_cols
-                        )
-                        merge_sql = text(
-                            f"INSERT INTO `{table_name}` ({escaped_cols}) "
-                            f"SELECT {escaped_cols} FROM `{staging_table}` "
-                            f"ON DUPLICATE KEY UPDATE {update_clause}"
-                        )
+                    # Decide whether to UPDATE or IGNORE based on table classification
+                    if table_name in UPSERT_TABLES:
+                        update_cols = [c for c in cols_to_insert if c != conflict_key]
+                        if update_cols:
+                            verb = "REPLACE"
+                            update_clause = ", ".join(
+                                f'"{c}" = CASE WHEN EXCLUDED."{c}" IS NULL OR EXCLUDED."{c}"::text = \'\' OR EXCLUDED."{c}"::text = \'nan\' THEN "{table_name}"."{c}" ELSE EXCLUDED."{c}" END'
+                                for c in update_cols
+                            )
+                            merge_sql = text(
+                                f'INSERT INTO "{table_name}" ({escaped_cols}) '
+                                f'SELECT {escaped_cols} FROM "{staging_table}" '
+                                f'ON CONFLICT ("{conflict_key}") DO UPDATE SET {update_clause}'
+                            )
+                        else:
+                            verb = "INSERT IGNORE"
+                            merge_sql = text(
+                                f'INSERT INTO "{table_name}" ({escaped_cols}) '
+                                f'SELECT {escaped_cols} FROM "{staging_table}" '
+                                f'ON CONFLICT ("{conflict_key}") DO NOTHING'
+                            )
                     else:
+                        # For IGNORE_TABLES (collections, other_payments, etc.)
                         verb = "INSERT IGNORE"
                         merge_sql = text(
-                            f"INSERT IGNORE INTO `{table_name}` ({escaped_cols}) "
-                            f"SELECT {escaped_cols} FROM `{staging_table}`"
+                            f'INSERT INTO "{table_name}" ({escaped_cols}) '
+                            f'SELECT {escaped_cols} FROM "{staging_table}" '
+                            f'ON CONFLICT ("{conflict_key}") DO NOTHING'
                         )
                 else:
+                    # Fallback if no specific conflict key is defined
                     verb = "INSERT IGNORE"
                     merge_sql = text(
-                        f"INSERT IGNORE INTO `{table_name}` ({escaped_cols}) "
-                        f"SELECT {escaped_cols} FROM `{staging_table}`"
+                        f'INSERT INTO "{table_name}" ({escaped_cols}) '
+                        f'SELECT {escaped_cols} FROM "{staging_table}" '
+                        f'ON CONFLICT DO NOTHING'
                     )
 
                 result = conn.execute(merge_sql)
@@ -247,7 +267,7 @@ class UploadService:
             finally:
                 # ── Step 3: Always clean up the staging table ──────────────────
                 try:
-                    conn.execute(text(f"DROP TABLE IF EXISTS `{staging_table}`"))
+                    conn.execute(text(f'DROP TABLE IF EXISTS "{staging_table}"'))
                 except Exception as cleanup_err:
                     logging.warning(f"Failed to drop staging table '{staging_table}': {cleanup_err}")
 

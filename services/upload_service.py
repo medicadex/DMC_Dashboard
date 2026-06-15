@@ -129,7 +129,7 @@ class UploadService:
         return df_mapped
 
     def _push_to_rds(self, table_name: str, df_mapped: pd.DataFrame,
-                     chunk_size: int = 500, progress_callback=None) -> dict:
+                     chunk_size: int = 1000, progress_callback=None) -> dict:
         """
         Core RDS push pipeline:
           1. Generate transaction_id deduplication keys (if not already present)
@@ -170,59 +170,140 @@ class UploadService:
             total_processed = len(df_final)
 
             try:
-                # ── Step 1: Load into staging table (chunked) ──────────────────
-                num_chunks = max(1, (total_processed // chunk_size) + 1)
-                for i in range(num_chunks):
-                    start_idx = i * chunk_size
-                    end_idx = min((i + 1) * chunk_size, total_processed)
-                    if start_idx >= end_idx:
-                        break
-                    chunk = df_final.iloc[start_idx:end_idx]
-                    chunk.to_sql(
-                        staging_table, conn,
-                        if_exists="replace" if i == 0 else "append",
-                        index=False
-                    )
-                    if progress_callback:
-                        progress_callback(int(((i + 1) / num_chunks) * 90))
+                # ── Step 1: Load into staging table ──────────────────
+                # For customers table, use optimized approach
+                if table_name == 'customers':
+                    # Create temp staging table by copying customers schema
+                    conn.execute(text(f"CREATE TEMPORARY TABLE {staging_table} AS TABLE {table_name} WITH NO DATA"))
+                    # Add a batch_row_id column for batching
+                    conn.execute(text(f"ALTER TABLE {staging_table} ADD COLUMN batch_row_id SERIAL"))
+                    # Create index for fast batch lookups
+                    conn.execute(text(f"CREATE INDEX idx_{staging_table}_batch ON {staging_table} (batch_row_id)"))
+                    
+                    # Now insert data into staging
+                    num_chunks = max(1, (total_processed // chunk_size) + 1)
+                    for i in range(num_chunks):
+                        start_idx = i * chunk_size
+                        end_idx = min((i + 1) * chunk_size, total_processed)
+                        if start_idx >= end_idx:
+                            break
+                        chunk = df_final.iloc[start_idx:end_idx]
+                        chunk.to_sql(
+                            staging_table, conn,
+                            if_exists="append",
+                            index=False,
+                            method="multi"
+                        )
+                        if progress_callback:
+                            progress_callback(int(((i + 1) / num_chunks) * 50))  # 50% progress for staging
 
-                # ── Step 2: Merge staging → live table on Supabase ──────────────────
-                # Deduplication strategy: Use ON CONFLICT to match RDS behavior
-                #   - UPSERT_TABLES → ON CONFLICT (...) DO UPDATE (REPLACE)
-                #   - IGNORE_TABLES → ON CONFLICT (...) DO NOTHING (INSERT IGNORE)
-                
-                conflict_keys = {
-                    'customers': 'account_number',
-                    'staff': 'staff_id',
-                    'performance_config': 'bu_name',
-                    'discounts': 'transaction_id',
-                    'adjustments': 'transaction_id',
-                    'resolutions': 'transaction_id',
-                    'collections': 'transaction_id',
-                    'other_payments': 'transaction_id',
-                    'validation': 'transaction_id',
-                    'disconnections': 'transaction_id'
-                }
-                
-                conflict_key = conflict_keys.get(table_name)
-                escaped_cols = ", ".join(f'"{c}"' for c in cols_to_insert)
-                
-                if conflict_key and conflict_key in cols_to_insert:
-                    # Decide whether to UPDATE or IGNORE based on table classification
-                    if table_name in UPSERT_TABLES:
-                        update_cols = [c for c in cols_to_insert if c != conflict_key]
-                        if update_cols:
-                            verb = "REPLACE"
-                            update_clause = ", ".join(
-                                f'"{c}" = CASE WHEN EXCLUDED."{c}" IS NULL OR EXCLUDED."{c}"::text = \'\' OR EXCLUDED."{c}"::text = \'nan\' THEN "{table_name}"."{c}" ELSE EXCLUDED."{c}" END'
-                                for c in update_cols
-                            )
-                            merge_sql = text(
-                                f'INSERT INTO "{table_name}" ({escaped_cols}) '
-                                f'SELECT {escaped_cols} FROM "{staging_table}" '
-                                f'ON CONFLICT ("{conflict_key}") DO UPDATE SET {update_clause}'
-                            )
+                    # ── Step 2: Merge in batches ──────────────────
+                    conflict_key = 'account_number'
+                    update_cols = [c for c in cols_to_insert if c != conflict_key]
+                    escaped_cols = ", ".join(f'"{c}"' for c in cols_to_insert)
+                    
+                    if update_cols:
+                        update_clause = ", ".join(
+                            f'"{c}" = CASE WHEN EXCLUDED."{c}" IS NULL OR EXCLUDED."{c}"::text = \'\' OR EXCLUDED."{c}"::text = \'nan\' THEN "{table_name}"."{c}" ELSE EXCLUDED."{c}" END'
+                            for c in update_cols
+                        )
+                        merge_sql_template = f"""
+                            INSERT INTO "{table_name}" ({escaped_cols})
+                            SELECT {escaped_cols}
+                            FROM "{staging_table}"
+                            WHERE batch_row_id BETWEEN :min_row AND :max_row
+                            ON CONFLICT ("{conflict_key}") DO UPDATE SET {update_clause}
+                        """
+                    else:
+                        merge_sql_template = f"""
+                            INSERT INTO "{table_name}" ({escaped_cols})
+                            SELECT {escaped_cols}
+                            FROM "{staging_table}"
+                            WHERE batch_row_id BETWEEN :min_row AND :max_row
+                            ON CONFLICT ("{conflict_key}") DO NOTHING
+                        """
+
+                    # Get total rows in temp table
+                    total_rows = conn.execute(text(f"SELECT COUNT(*) FROM {staging_table}")).scalar()
+                    merge_batch_size = 10000
+                    current_min = 1
+                    total_processed_db = 0
+                    
+                    while current_min <= total_rows:
+                        current_max = current_min + merge_batch_size - 1
+                        if current_max > total_rows:
+                            current_max = total_rows
+                        
+                        result = conn.execute(text(merge_sql_template), {'min_row': current_min, 'max_row': current_max})
+                        total_processed_db += result.rowcount
+                        
+                        # Update progress
+                        if progress_callback:
+                            progress = 50 + int((current_max / total_rows) * 50)
+                            progress_callback(progress)
+                        
+                        current_min = current_max + 1
+                    
+                    total_new = min(total_processed_db, total_processed)
+
+                else:
+                    # Standard approach for other tables
+                    num_chunks = max(1, (total_processed // chunk_size) + 1)
+                    for i in range(num_chunks):
+                        start_idx = i * chunk_size
+                        end_idx = min((i + 1) * chunk_size, total_processed)
+                        if start_idx >= end_idx:
+                            break
+                        chunk = df_final.iloc[start_idx:end_idx]
+                        chunk.to_sql(
+                            staging_table, conn,
+                            if_exists="replace" if i == 0 else "append",
+                            index=False
+                        )
+                        if progress_callback:
+                            progress_callback(int(((i + 1) / num_chunks) * 90))
+
+                    # ── Step 2: Merge staging → live table ──────────────────
+                    conflict_keys = {
+                        'customers': 'account_number',
+                        'staff': 'staff_id',
+                        'performance_config': 'bu_name',
+                        'discounts': 'transaction_id',
+                        'adjustments': 'transaction_id',
+                        'resolutions': 'transaction_id',
+                        'collections': 'transaction_id',
+                        'other_payments': 'transaction_id',
+                        'validation': 'transaction_id',
+                        'disconnections': 'transaction_id'
+                    }
+                    
+                    conflict_key = conflict_keys.get(table_name)
+                    escaped_cols = ", ".join(f'"{c}"' for c in cols_to_insert)
+                    
+                    if conflict_key and conflict_key in cols_to_insert:
+                        # Decide whether to UPDATE or IGNORE based on table classification
+                        if table_name in UPSERT_TABLES:
+                            update_cols = [c for c in cols_to_insert if c != conflict_key]
+                            if update_cols:
+                                verb = "REPLACE"
+                                update_clause = ", ".join(
+                                    f'"{c}" = CASE WHEN EXCLUDED."{c}" IS NULL OR EXCLUDED."{c}"::text = \'\' OR EXCLUDED."{c}"::text = \'nan\' THEN "{table_name}"."{c}" ELSE EXCLUDED."{c}" END'
+                                    for c in update_cols
+                                )
+                                merge_sql = text(
+                                    f'INSERT INTO "{table_name}" ({escaped_cols}) '
+                                    f'SELECT {escaped_cols} FROM "{staging_table}" '
+                                    f'ON CONFLICT ("{conflict_key}") DO UPDATE SET {update_clause}'
+                                )
+                            else:
+                                verb = "INSERT IGNORE"
+                                merge_sql = text(
+                                    f'INSERT INTO "{table_name}" ({escaped_cols}) '
+                                    f'SELECT {escaped_cols} FROM "{staging_table}" '
+                                    f'ON CONFLICT ("{conflict_key}") DO NOTHING'
+                                )
                         else:
+                            # For IGNORE_TABLES
                             verb = "INSERT IGNORE"
                             merge_sql = text(
                                 f'INSERT INTO "{table_name}" ({escaped_cols}) '
@@ -230,54 +311,41 @@ class UploadService:
                                 f'ON CONFLICT ("{conflict_key}") DO NOTHING'
                             )
                     else:
-                        # For IGNORE_TABLES (collections, other_payments, etc.)
+                        # Fallback if no conflict key
                         verb = "INSERT IGNORE"
                         merge_sql = text(
                             f'INSERT INTO "{table_name}" ({escaped_cols}) '
                             f'SELECT {escaped_cols} FROM "{staging_table}" '
-                            f'ON CONFLICT ("{conflict_key}") DO NOTHING'
+                            f'ON CONFLICT DO NOTHING'
                         )
-                else:
-                    # Fallback if no specific conflict key is defined
-                    verb = "INSERT IGNORE"
-                    merge_sql = text(
-                        f'INSERT INTO "{table_name}" ({escaped_cols}) '
-                        f'SELECT {escaped_cols} FROM "{staging_table}" '
-                        f'ON CONFLICT DO NOTHING'
-                    )
 
-                result = conn.execute(merge_sql)
+                    result = conn.execute(merge_sql)
+                    
+                    # rowcount semantics
+                    if verb == "INSERT IGNORE":
+                        total_new = result.rowcount
+                    else:
+                        total_new = min(result.rowcount, total_processed)
 
-                # rowcount semantics:
-                #   INSERT IGNORE → rows actually inserted (duplicates = 0 affected)
-                #   REPLACE       → rows inserted (2x per updated row due to delete+insert)
-                if verb == "INSERT IGNORE":
-                    total_new = result.rowcount
-                else:
-                    # REPLACE reports 2 for each updated row, 1 for new rows
-                    # Divide by 2 gives a rough "updates" count; report total processed instead
-                    total_new = min(result.rowcount, total_processed)
+                    if progress_callback:
+                        progress_callback(100)
 
                 if 'amount_paid' in df_final.columns:
                     total_amount = float(df_final['amount_paid'].sum())
 
-                if progress_callback:
-                    progress_callback(100)
-
             finally:
-                # ── Step 3: Always clean up the staging table ──────────────────
+                # Clean up staging table
                 try:
                     conn.execute(text(f'DROP TABLE IF EXISTS "{staging_table}"'))
                 except Exception as cleanup_err:
                     logging.warning(f"Failed to drop staging table '{staging_table}': {cleanup_err}")
 
-        duplicates = max(0, total_processed - total_new) if verb == "INSERT IGNORE" else 0
+        duplicates = max(0, total_processed - total_new) if ('verb' in locals() and verb == "INSERT IGNORE") else 0
         return {
             "new": total_new,
             "total": total_processed,
             "amount": total_amount,
-            "duplicates": duplicates,
-            "verb": verb
+            "duplicates": duplicates
         }
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -285,7 +353,7 @@ class UploadService:
     # ──────────────────────────────────────────────────────────────────────────
 
     def process_table(self, table_name: str, filepath: str, username: str,
-                      progress_callback=None) -> dict:
+                      progress_callback=None, chunk_size: int = 1000) -> dict:
         """
         Standard upload entry point (used by /report-uploader and /admin/upload-tables).
         Maps columns from the Excel file via mappings.json, then pushes directly to RDS
@@ -314,7 +382,7 @@ class UploadService:
                 except Exception as e:
                     logging.error(f"Error detecting officer changes programmatically in web: {e}")
                     
-            result = self._push_to_rds(table_name, df_mapped, progress_callback=progress_callback)
+            result = self._push_to_rds(table_name, df_mapped, chunk_size=chunk_size, progress_callback=progress_callback)
             result['officer_changes'] = officer_changes
 
             self.repo.log_activity(

@@ -678,9 +678,14 @@ def admin_upload_tables():
             file.save(filepath)
 
             try:
-                result = upload_service.process_table(
-                    table_name, filepath, session['user']['username']
-                )
+                if table_name == 'customers':
+                    result = upload_service.process_table(
+                        table_name, filepath, session['user']['username'], chunk_size=10000
+                    )
+                else:
+                    result = upload_service.process_table(
+                        table_name, filepath, session['user']['username']
+                    )
                 results.append({
                     "table":      table_name,
                     "total":      result.get('total', 0),
@@ -2280,8 +2285,8 @@ def api_customers_export():
                 SELECT 
                     (SELECT COALESCE(SUM(amount_paid),0) FROM collections WHERE account_number = c.account_number) + 
                     (SELECT COALESCE(SUM(amount_paid),0) FROM other_payments WHERE account_number = c.account_number) as total_payments,
-                    (SELECT COALESCE(SUM(discounted_amount),0) FROM discounts WHERE account_number = c.account_number AND (lower(status) = 'approved' OR lower(user_who_approved) LIKE '%%okoye%%' OR lower(user_who_approved) LIKE '%%forstinus%%')) as total_discounts,
-                    (SELECT COALESCE(SUM(adjustment_amount),0) FROM adjustments WHERE account_number = c.account_number AND (lower(status) = 'approved' OR lower(user_who_approved_adjustment) LIKE '%%okoye%%' OR lower(user_who_approved_adjustment) LIKE '%%forstinus%%')) as total_adjustments
+                    (SELECT COALESCE(SUM(discounted_amount),0) FROM discounts WHERE account_number = c.account_number AND (lower(status) = 'approved' OR lower(user_who_approved) LIKE '%okoye%' OR lower(user_who_approved) LIKE '%forstinus%')) as total_discounts,
+                    (SELECT COALESCE(SUM(adjustment_amount),0) FROM adjustments WHERE account_number = c.account_number AND (lower(status) = 'approved' OR lower(user_who_approved_adjustment) LIKE '%okoye%' OR lower(user_who_approved_adjustment) LIKE '%forstinus%')) as total_adjustments
             ) afs ON true
             WHERE c.business_unit = ANY(:bus)
             AND c.officer_type = ANY(:otypes)
@@ -2311,9 +2316,9 @@ def api_customers_export():
         is_pp = (df['Total Payments'] >= 0.3 * df['Closing Balance']) & (df['Outstanding Balance'] > 0)
         df['Current Payment-Plan Status'] = np.where(is_pp, "Yes", "No")
         
-        # Ensure Last Payment Date is string for Excel compatibility if it's a datetime
+        # Convert timezone-aware datetimes to string for Excel export compatibility
         if 'Last Payment Date' in df.columns:
-            df['Last Payment Date'] = df['Last Payment Date'].astype(str).replace('None', '')
+            df['Last Payment Date'] = pd.to_datetime(df['Last Payment Date'], errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S')
         
         export_df = df[[
             'Account Number', 'Account Name', 'Account Address', 'Business Unit', 

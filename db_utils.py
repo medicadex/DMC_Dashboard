@@ -45,9 +45,11 @@ def get_db_engine(db_pass=None, include_db=True):
         conn_str = f"postgresql+psycopg2://{db_user}:{encoded_pw}@{db_host}:{db_port}/postgres"
     
     # Supabase Connection Arguments
+    print(f"[DEBUG] Connecting to {db_user}@{db_host}:{db_port}/{db_name}")
     connect_args = {
         'sslmode': 'require',
-        'connect_timeout': 15
+        'connect_timeout': 120,  # 2 minutes for initial connection
+        'options': '-c statement_timeout=3600000'  # 1 hour per statement
     }
     
     if db_ssl_ca:

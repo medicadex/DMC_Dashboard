@@ -1707,12 +1707,25 @@
                 return;
             }
 
-            const result = await response.json();
-            if (result.success) {
-                window.location.href = `/download/${result.filename}`;
-            } else {
-                alert("Error exporting file: " + (result.error || "Unknown error"));
+            // Handle file download directly from response
+            const blob = await response.blob();
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let filename = 'job_form_report.xlsx';
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename[^;=\n]*['"]?([^\n";]*)/);
+                if (filenameMatch && filenameMatch[1]) {
+                    filename = filenameMatch[1];
+                }
             }
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.target = '_blank'; // Open in new tab
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
         } catch (error) {
             console.error("Export error:", error);
             alert("An error occurred during file export.");

@@ -674,17 +674,31 @@
                 })
             });
 
-            const result = await response.json();
-            if (result.success) {
-                const link = document.createElement('a');
-                link.href = `/download/${result.filename}`;
-                link.setAttribute('download', result.filename);
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            } else {
-                alert("Export failed: " + result.error);
+            if (!response.ok) {
+                const errData = await response.json();
+                alert("Export failed: " + (errData.error || "Unknown error"));
+                return;
             }
+
+            // Handle file download directly from response
+            const blob = await response.blob();
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let filename = 'payment_listing.xlsx';
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename[^;=\n]*['"]?([^\n";]*)/);
+                if (filenameMatch && filenameMatch[1]) {
+                    filename = filenameMatch[1];
+                }
+            }
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.target = '_blank'; // Open in new tab
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
         } catch (err) {
             alert("Error exporting: " + err.message);
         } finally {

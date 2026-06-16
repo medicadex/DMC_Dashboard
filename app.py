@@ -1647,14 +1647,19 @@ def job_form_export():
         stamp = datetime.now().strftime('%d-%m-%Y')
         filename = secure_filename(f"{off_str}_{form_type}_{stamp}.xlsx")
         
-        # Stream Excel directly into in-memory buffer - Removing constant_memory to avoid blank columns issue
+        # Stream Excel directly into in-memory buffer
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             df.to_excel(writer, index=False, sheet_name='Job Form')
         buffer.seek(0)
         
-        cache_export_file(filename, buffer.getvalue())
-        return jsonify({"success": True, "filename": filename})
+        # Return the file directly
+        return send_file(
+            buffer,
+            download_name=filename,
+            as_attachment=True,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
     except Exception as e:
         logger.error(f"Job Form Export Error: {e}", exc_info=True)
         return jsonify({"error": "An internal error occurred while exporting the job form report."}), 500
@@ -2093,17 +2098,22 @@ def api_payments_export():
             "end": end_date
         })
         
-        # Stream Excel directly into in-memory buffer - Removing constant_memory to avoid blank columns issue
+        # Stream Excel directly into in-memory buffer
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             df.to_excel(writer, index=False, sheet_name='Payments')
         buffer.seek(0)
         
-        cache_export_file(filename, buffer.getvalue())
-        return jsonify({"success": True, "filename": filename})
+        # Return the file directly
+        return send_file(
+            buffer,
+            download_name=filename,
+            as_attachment=True,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
     except Exception as e:
         logger.error(f"Payment Export Error: {e}", exc_info=True)
-        return jsonify({"error": "An internal error occurred while exporting the payments report."}), 500
+        return jsonify({"error": f"An internal error occurred while exporting the payments report: {str(e)}"}), 500
 
 @app.route('/api/customers/preview')
 @login_required
@@ -2333,17 +2343,22 @@ def api_customers_export():
             "otypes": otypes
         })
         
-        # Stream Excel directly into in-memory buffer - Removing constant_memory to avoid blank columns issue
+        # Stream Excel directly into in-memory buffer
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             export_df.to_excel(writer, index=False, sheet_name='Customers')
         buffer.seek(0)
         
-        cache_export_file(filename, buffer.getvalue())
-        return jsonify({"success": True, "filename": filename})
+        # Return the file directly
+        return send_file(
+            buffer,
+            download_name=filename,
+            as_attachment=True,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
     except Exception as e:
         logger.error(f"Customer Export Error: {e}", exc_info=True)
-        return jsonify({"error": "An internal error occurred while exporting the customer report."}), 500
+        return jsonify({"error": f"An internal error occurred while exporting the customer report: {str(e)}"}), 500
 
 @app.route('/download/<filename>')
 @login_required

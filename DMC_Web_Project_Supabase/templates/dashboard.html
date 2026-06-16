@@ -1,0 +1,510 @@
+{% extends "base.html" %}
+
+{% block page_title %}Account Dashboard{% endblock %}
+
+{% block content %}
+
+<!-- Search Row -->
+<div class="card" style="margin-bottom: 20px; display: flex; gap: 15px; position: relative;">
+    <div style="flex-grow: 1; max-width: 400px; position: relative;">
+        <input type="text" id="searchInput" class="form-control" placeholder="Search Account Number, Name or Address..." autocomplete="off">
+        <ul id="autocompleteResults" style="display: none; position: absolute; z-index: 1000; top: 100%; left: 0; right: 0; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; margin: 5px 0 0; padding: 0; list-style: none; overflow-y: auto; max-height: 300px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+        </ul>
+    </div>
+    <button id="searchBtn" class="btn-search"><i class="fas fa-search"></i> Search</button>
+</div>
+
+<div id="loadingIndicator" style="display: none; text-align: center; padding: 40px; color: var(--primary-color);">
+    <i class="fas fa-spinner fa-spin fa-3x"></i>
+    <p style="margin-top: 15px; font-weight: 500;">Fetching Account Details...</p>
+</div>
+
+<!-- Results Wrapper -->
+<div id="resultsArea" style="display: none;">
+    
+    <!-- Unified Main Card Wrapper (Matches User Design) -->
+    <div class="card" style="padding: 25px;">
+        
+        <!-- Header Row (Name + Banner) -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; flex-wrap: wrap; gap: 15px;">
+            <h2 id="customerNameHeader" style="margin: 0; font-size: 24px; font-weight: 800; color: var(--text-color);">--</h2>
+            
+            <!-- BU, Undertaking, Officer Banner + Download Button -->
+            <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+                <div id="topBanner" style="background: var(--bg-color); border: 1px solid var(--primary-color); border-radius: 8px; padding: 10px 20px; display: flex; gap: 20px; font-weight: 500; color: var(--text-color); font-size: 13px;">
+                    <div><span style="color: var(--text-muted); font-size: 11px;">BU:</span> <span id="bannerBU" style="font-weight: 700;">--</span></div>
+                    <div><span style="color: var(--text-muted); font-size: 11px;">Undertaking:</span> <span id="bannerUT" style="font-weight: 700;">--</span></div>
+                    <div><span style="color: var(--text-muted); font-size: 11px;">Officer:</span> <span id="bannerOfficer" style="font-weight: 700;">--</span></div>
+                </div>
+                <button id="downloadSOABtn" class="btn-download-pdf" disabled>
+                    <i class="fas fa-file-pdf"></i> Preview / Download Statement (Temporarily Unavailable)
+                </button>
+            </div>
+        </div>
+
+        <!-- 5 Columns Grid -->
+        <div class="grid-5-col">
+            
+            <!-- Col 1: Demographic -->
+            <div class="col-card">
+                <div class="col-header">DEMOGRAPHIC INFO</div>
+                <div class="col-body" id="col1">
+                    <!-- Data injected via JS -->
+                </div>
+            </div>
+
+            <!-- Col 2: Debt Profile -->
+            <div class="col-card">
+                <div class="col-header" style="background: rgba(239, 68, 68, 0.08); color: #ef4444;">DEBT PROFILE</div>
+                <div class="col-body" id="col2">
+                    <!-- Data injected via JS -->
+                </div>
+            </div>
+
+            <!-- Col 3: Validation Details -->
+            <div class="col-card">
+                <div class="col-header">VALIDATION DETAILS</div>
+                <div class="col-body" id="col3">
+                    <!-- Data injected via JS -->
+                </div>
+            </div>
+
+            <!-- Col 4: Resolution/Migration -->
+            <div class="col-card">
+                <div class="col-header">RESOLUTION / MIGRATION</div>
+                <div class="col-body" id="col4">
+                    <!-- Data injected via JS -->
+                </div>
+            </div>
+
+            <!-- Col 5: Payment Listing -->
+            <div class="col-card">
+                <div class="col-header">PAYMENT LISTING</div>
+                <div class="col-body" id="col5">
+                    <!-- Data injected via JS -->
+                </div>
+            </div>
+            
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block head %}
+<style>
+    .form-control {
+        width: 100%;
+        padding: 12px 15px;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        font-size: 14px;
+        font-family: inherit;
+        outline: none;
+        transition: border-color 0.2s;
+    }
+
+    .form-control:focus {
+        border-color: var(--primary-color);
+    }
+
+    .btn-search {
+        background-color: var(--primary-color);
+        color: white;
+        border: none;
+        padding: 0 25px;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+
+    .btn-search:hover {
+        background-color: var(--primary-hover);
+    }
+
+    .btn-download-pdf {
+        background-color: var(--success-color);
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .btn-download-pdf:hover {
+        background-color: #059669;
+    }
+
+    :root[data-theme="dark"] .btn-download-pdf:hover {
+        background-color: #0d9488;
+    }
+
+    .grid-5-col {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 15px;
+        align-items: start;
+    }
+
+    .col-card {
+        background: transparent;
+        border: none;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .col-header {
+        background: rgba(224, 12, 126, 0.05); /* very light pink */
+        padding: 12px 15px;
+        font-weight: 800;
+        font-size: 11px;
+        border-radius: 6px;
+        margin-bottom: 15px;
+        color: var(--primary-color);
+        text-transform: uppercase;
+    }
+
+    .col-body {
+        padding: 0;
+        flex-grow: 1;
+        font-size: 13px;
+        height: 550px;
+        overflow-y: auto;
+        padding-right: 5px; /* space for scrollbar */
+    }
+
+    /* Custom scrollbar for columns */
+    .col-body::-webkit-scrollbar {
+        width: 4px;
+    }
+    .col-body::-webkit-scrollbar-thumb {
+        background: var(--border-color);
+        border-radius: 10px;
+    }
+    .col-body::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    /* Target UI: Individual Cards for Rows */
+    .info-row {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 10px 12px;
+        margin-bottom: 12px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03); /* subtle elevation */
+    }
+
+    .info-row .label {
+        display: block;
+        color: var(--text-muted);
+        font-weight: 500;
+        margin-bottom: 4px;
+        font-size: 10px;
+        text-transform: capitalize;
+    }
+
+    .info-row .val {
+        display: block;
+        color: var(--text-color);
+        font-weight: 700;
+        word-break: break-word;
+        font-size: 12px;
+    }
+
+    /* Outstanding Box Custom Style */
+    .outstanding-box {
+        border-color: rgba(239, 68, 68, 0.4) !important;
+        background: rgba(239, 68, 68, 0.05) !important;
+    }
+
+    .outstanding-box .label, .outstanding-box .val {
+        color: #ef4444;
+    }
+
+    :root[data-theme="dark"] .outstanding-box {
+        background: rgba(239, 68, 68, 0.1) !important;
+        border-color: rgba(239, 68, 68, 0.6) !important;
+    }
+
+    /* Table for payments */
+    .payment-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .payment-table th {
+        text-align: left;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--primary-color);
+        font-size: 11px;
+        font-weight: 700;
+    }
+
+    .payment-table td {
+        padding: 12px 0;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 12px;
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const formatCurrency = (val) => {
+        if(!val && val !== 0) return '--';
+        return '₦' + parseFloat(val).toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    };
+
+    const makeRow = (label, val, highlight=false, customHtml=null) => {
+        if(customHtml) {
+            return `<div class="info-row ${highlight ? 'outstanding-box' : ''}">${customHtml}</div>`;
+        }
+        return `
+            <div class="info-row ${highlight ? 'outstanding-box' : ''}">
+                <span class="label">${label}</span>
+                <span class="val">${val || '--'}</span>
+            </div>
+        `;
+    };
+
+    // Autocomplete Logic
+    const searchInput = document.getElementById('searchInput');
+    const autocompleteList = document.getElementById('autocompleteResults');
+    let debounceTimer;
+
+    // Check for account parameter on load
+    document.addEventListener('DOMContentLoaded', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const acc = urlParams.get('acc');
+        if (acc) {
+            searchInput.value = acc;
+            document.getElementById('searchBtn').click();
+        }
+    });
+
+    searchInput.addEventListener('input', (e) => {
+        clearTimeout(debounceTimer);
+        const query = e.target.value.trim();
+        
+        if (query.length < 3) {
+            autocompleteList.style.display = 'none';
+            return;
+        }
+
+        debounceTimer = setTimeout(async () => {
+            try {
+                const res = await fetch(`/api/autocomplete?q=${encodeURIComponent(query)}`);
+                const results = await res.json();
+                
+                if (results.length > 0) {
+                    autocompleteList.innerHTML = results.map(r => `
+                        <li style="padding: 10px 15px; cursor: pointer; border-bottom: 1px solid var(--border-color); transition: background 0.2s;" 
+                            onmouseover="this.style.background='var(--primary-color)'; this.style.color='white';" 
+                            onmouseout="this.style.background='transparent'; this.style.color='var(--text-color)';"
+                            onclick="selectAccount('${r.account_number}')">
+                            <div style="font-weight: 600;">${r.account_name || 'No Name'} (${r.account_number})</div>
+                            <div style="font-size: 11px; opacity: 0.8;">${r.account_address || ''}</div>
+                        </li>
+                    `).join('');
+                    autocompleteList.style.display = 'block';
+                } else {
+                    autocompleteList.style.display = 'none';
+                }
+            } catch (err) {
+                console.error("Autocomplete error:", err);
+            }
+        }, 300); // 300ms debounce
+    });
+
+    // Hide autocomplete when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !autocompleteList.contains(e.target)) {
+            autocompleteList.style.display = 'none';
+        }
+    });
+
+    window.selectAccount = (acc_num) => {
+        searchInput.value = acc_num;
+        autocompleteList.style.display = 'none';
+        document.getElementById('searchBtn').click();
+    };
+
+    searchInput.addEventListener('keypress', (e) => {
+        if(e.key === 'Enter') document.getElementById('searchBtn').click();
+    });
+
+    document.getElementById('searchBtn').addEventListener('click', async () => {
+        const accNum = document.getElementById('searchInput').value.trim();
+        if(!accNum) return alert('Please enter an account number');
+
+        document.getElementById('resultsArea').style.display = 'none';
+        document.getElementById('loadingIndicator').style.display = 'block';
+        document.getElementById('searchBtn').disabled = true;
+
+        try {
+            const res = await fetch(`/api/account_dashboard/${accNum}`);
+            const data = await res.json();
+
+            if(!res.ok) {
+                alert(data.error || "Account not found!");
+                document.getElementById('loadingIndicator').style.display = 'none';
+                document.getElementById('searchBtn').disabled = false;
+                return;
+            }
+
+            const acc = data.account;
+            const fin = data.financials;
+            const history = data.history || [];
+            const val = data.validation || {};
+            const resData = data.resolution || {};
+
+            // Populate Top Banner Header
+            document.getElementById('customerNameHeader').innerText = (acc.account_name || 'UNKNOWN ACCOUNT').toUpperCase();
+            document.getElementById('bannerBU').innerText = acc.business_unit || '--';
+            document.getElementById('bannerUT').innerText = acc.undertaking || '--';
+            document.getElementById('bannerOfficer').innerText = acc.account_officer || '--';
+
+            // Bind PDF Download Event - Currently Disabled
+            document.getElementById('downloadSOABtn').onclick = () => {
+                // Do nothing - button is disabled
+            };
+            document.getElementById('downloadSOABtn').disabled = true;
+            document.getElementById('downloadSOABtn').style.opacity = '0.5';
+            document.getElementById('downloadSOABtn').style.cursor = 'not-allowed';
+            document.getElementById('downloadSOABtn').title = "Download Statement feature is temporarily unavailable. Please check back later.";
+
+            // Col 1 Demographic
+            document.getElementById('col1').innerHTML = `
+                ${makeRow('Batch', acc.batch)}
+                ${makeRow('Service Address', acc.account_address)}
+                ${makeRow('DT Name', acc.dt_name)}
+                ${makeRow('Feeder Band', acc.feeder)}
+                ${makeRow('Status at Deactivation', acc.customer_status)}
+                ${makeRow('Last Payment Amount', formatCurrency(acc.last_pay_amt_pre_deactivation))}
+                ${makeRow('LPY', acc.last_pay_date_pre_deactivation)}
+            `;
+
+            // Col 2 Debt Profile
+            let discountHtml = '';
+            if(fin.discounts && fin.discounts.length > 0) {
+                let itemsHtml = fin.discounts.map(d => `<div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 5px;">
+                        <span>${d.status === 'valid' ? 'Approved' : d.status === 'rejected' ? 'Rejected' : 'Pending'}</span>
+                        <span style="color: var(--success-color);">${formatCurrency(d.amount)}</span>
+                    </div>`).join('');
+                discountHtml = `<div class="info-row"><span class="label">Discounts</span><span class="val">${itemsHtml}</span></div>`;
+            } else {
+                discountHtml = `<div class="info-row"><span class="label">Discounts</span><span class="val" style="color:var(--text-muted); font-weight: normal; font-style: italic;">No discounts</span></div>`;
+            }
+
+            let adjHtml = '';
+            if(fin.adjustments && fin.adjustments.length > 0) {
+                let itemsHtml = fin.adjustments.map(d => `<div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 5px;">
+                        <span>${d.status === 'valid' ? 'Approved' : d.status === 'rejected' ? 'Rejected' : 'Pending'}</span>
+                        <span style="color: var(--primary-color);">${formatCurrency(d.amount)}</span>
+                    </div>`).join('');
+                adjHtml = `<div class="info-row"><span class="label">Adjustments</span><span class="val">${itemsHtml}</span></div>`;
+            } else {
+                 adjHtml = `<div class="info-row"><span class="label">Adjustments</span><span class="val" style="color:var(--text-muted); font-weight: normal; font-style: italic;">No adjustments</span></div>`;
+            }
+            
+            // Payment Plan Logic 
+            const ppActive = fin.payment_plan === 'Yes';
+            const ppStatus = fin.payment_plan_status || 'No Plan';
+            
+            let statusStyle = 'color: var(--text-muted); font-weight: normal;';
+            if (ppStatus === 'Active') {
+                statusStyle = 'color: #10b981; font-weight: bold;'; // Green
+            } else if (ppStatus === 'Defaulted') {
+                statusStyle = 'color: #ef4444; font-weight: 900;'; // Red + Extra Bold
+            }
+
+            document.getElementById('col2').innerHTML = `
+                ${makeRow('Total Debt', formatCurrency(fin.total_debt))}
+                ${makeRow('POS Payment', formatCurrency(fin.pos_payments))}
+                ${makeRow('Last Payment Date', history.length > 0 ? history[0].date : '--')}
+                ${makeRow('Other Payments', formatCurrency(fin.other_payments))}
+                ${discountHtml}
+                ${adjHtml}
+                ${makeRow('Outstanding Debt', formatCurrency(fin.outstanding_balance), true)}
+                ${makeRow('Payment Plan Status', `<span style="${statusStyle}">${ppStatus.toUpperCase()}</span>`)}
+                ${makeRow('Active Payment Plan?', `<span style="font-weight:700;">${fin.payment_plan || 'No'}</span>`)}
+            `;
+
+            // Col 3 Validation
+            document.getElementById('col3').innerHTML = `
+                ${makeRow('Physical Status', val.physical_status)}
+                ${makeRow('Reason For Non Payment', val.reason_for_non_payment)}
+                ${makeRow('Phone Number', val.phone_number)}
+                ${makeRow('Email', val.customer_email)}
+                ${makeRow('Validated By', val.dmo)}
+                ${makeRow('Date Validated', val.validation_date)}
+            `;
+
+            // Col 4 Resolution
+            document.getElementById('col4').innerHTML = `
+                ${makeRow('Resolution', resData.resolution)}
+                ${makeRow('Action Taken', resData.outcome_of_actions_taken)}
+                ${makeRow('Other Info', resData.new_resolution)}
+                ${makeRow('Cleared For Migration', '--')}
+                ${makeRow('Migration Type', '--')}
+                ${makeRow('Meter No. (If available)', resData.ppm_no)}
+                ${makeRow('New account', resData.sr_number)}
+            `;
+
+            // Col 5 Payments
+            let payRows = history.map(h => {
+                return `<tr>
+                    <td style="font-size: 11px; padding-right: 15px;">${h.date}</td>
+                    <td style="font-weight: 700; color: var(--primary-color);">${formatCurrency(h.amount)} <br><span style="font-size: 10px; color: var(--text-muted); font-weight: normal;">(${h.source || 'collection'})</span></td>
+                </tr>`;
+            }).join('');
+
+            if(history.length === 0) {
+                payRows = `<tr><td colspan="2" style="text-align:center; padding: 20px;">No payments found.</td></tr>`;
+            }
+
+            let totalPayment = history.reduce((sum, h) => sum + parseFloat(h.amount || 0), 0);
+
+            document.getElementById('col5').innerHTML = `
+                <div style="background: transparent; border: none;">
+                    <table class="payment-table">
+                        <thead>
+                            <tr>
+                                <th>DateOfPayment</th>
+                                <th>Sum of AmountPaid</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${payRows}
+                        </tbody>
+                    </table>
+                </div>
+                <!-- Total Row -->
+                <div class="info-row" style="margin-top: 15px; background: transparent; border: none; box-shadow: none; border-top: 1px solid var(--border-color); border-radius: 0; padding: 15px 0;">
+                    <span style="font-size: 14px; font-weight: 800; color: var(--text-color);">Total: ${formatCurrency(totalPayment)}</span>
+                </div>
+            `;
+
+            document.getElementById('loadingIndicator').style.display = 'none';
+            document.getElementById('resultsArea').style.display = 'block';
+            
+        } catch(err) {
+            console.error(err);
+            document.getElementById('loadingIndicator').style.display = 'none';
+            alert("Connection error fetching account details.");
+        }
+
+        document.getElementById('searchBtn').disabled = false;
+    });
+</script>
+{% endblock %}

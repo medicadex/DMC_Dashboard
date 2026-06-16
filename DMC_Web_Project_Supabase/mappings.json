@@ -1,0 +1,179 @@
+{
+    "collections": {
+        "filename": "Report_*.xlsx",
+        "date_cols": [
+            "date_of_payment"
+        ],
+        "mapping": {
+            "accountnumber": "account_number",
+            "accountname": "account_name",
+            "address": "account_address",
+            "accountaddress": "account_address",
+            "dateofpayment": "date_of_payment",
+            "debtbalancelastpayment": "debt_balance_last_payment",
+            "amountpaid": "amount_paid",
+            "currentbalance": "current_balance",
+            "transactionid": "transaction_id",
+            "receiptnumber": "receipt_number",
+            "businessunit": "business_unit"
+        }
+    },
+    "validation": {
+        "filename": "CustomerValidation_*.xlsx",
+        "date_cols": [
+            "validation_date"
+        ],
+        "mapping": {
+            "date": "validation_date",
+            "validationdate": "validation_date",
+            "accountnumber": "account_number",
+            "accountname": "account_name",
+            "customeraddress": "account_address",
+            "accountaddress": "account_address",
+            "phonenumber": "phone_number",
+            "customeremail": "customer_email",
+            "email": "customer_email",
+            "physicalstatus": "physical_status",
+            "picture1": "picture_1",
+            "picture2": "picture_2",
+            "picture3": "picture_3",
+            "gpscoordinate": "gps_coordinate",
+            "reasonfornonpayment": "reason_for_non_payment",
+            "dmo": "dmo",
+            "dms": "dms",
+            "actionrequired": "action_required"
+        }
+    },
+    "other_payments": {
+        "filename": "OtherPayment*.xlsx",
+        "date_cols": [
+            "date_of_payment"
+        ],
+        "mapping": {
+            "accountnumber": "account_number",
+            "amountpaid": "amount_paid",
+            "dateofpayment": "date_of_payment",
+            "justification": "justification",
+            "paymenttype": "payment_type",
+            "reference": "reference"
+        }
+    },
+    "disconnections": {
+        "filename": "Disconnections_*.xlsx",
+        "date_cols": [
+            "disconnection_date"
+        ],
+        "mapping": {
+            "accountnumber": "account_number",
+            "accountname": "account_name",
+            "customeraddress": "account_address",
+            "accountaddress": "account_address",
+            "disconnectiondate": "disconnection_date",
+            "dmo": "dmo",
+            "dms": "dms",
+            "dtname": "dt_name",
+            "utname": "ut_name",
+            "buname": "bu_name",
+            "pictureofdisconnection": "picture_of_disconnection",
+            "pictureofpremises": "picture_of_premises",
+            "longitude": "longitude",
+            "latitude": "latitude"
+        }
+    },
+    "resolutions": {
+        "filename": "Resolutions_*.xlsx",
+        "mapping": {
+            "accountnumber": "account_number",
+            "accountname": "account_name",
+            "accountaddress": "account_address",
+            "resolution": "resolution",
+            "actiontaken": "outcome_of_actions_taken",
+            "outcomeofactionstaken": "outcome_of_actions_taken",
+            "newresolution": "new_resolution",
+            "abandonedduplicateaccountno": "abandoned_duplicate_account_no",
+            "ppmno": "ppm_no",
+            "srnumber": "sr_number",
+            "referencedetails": "reference_details",
+            "resolvedby": "resolved_by"
+        }
+    },
+    "discounts": {
+        "filename": "Discounts_*.xlsx",
+        "date_cols": [
+            "date_applied",
+            "date_approved"
+        ],
+        "mapping": {
+            "accountnumber": "account_number",
+            "accountname": "account_name",
+            "percentagediscount": "percentage_discount",
+            "discountamount": "discounted_amount",
+            "discountedamount": "discounted_amount",
+            "totaldebtatmigration": "total_debt_at_migration",
+            "totaldebt(atmigration)": "total_debt_at_migration",
+            "totaldebtafterdiscount": "total_debt_after_discount",
+            "totaldebt(afterdiscount)": "total_debt_after_discount",
+            "status": "status",
+            "dateapplied": "date_applied",
+            "dateapproved": "date_approved",
+            "userwhoraised": "user_who_raised",
+            "userwhoraisedthediscount": "user_who_raised",
+            "userwhoapproved": "user_who_approved",
+            "userwhoapprovedthediscount": "user_who_approved",
+            "businessunit": "business_unit",
+            "undertaking": "undertaking"
+        }
+    },
+    "adjustments": {
+        "filename": "Adjustments_*.xlsx",
+        "date_cols": [
+            "date_applied",
+            "date_approved"
+        ],
+        "mapping": {
+            "accountnumber": "account_number",
+            "accountname": "account_name",
+            "adjustmentamount": "adjustment_amount",
+            "totaldebtatmigration": "total_debt_at_migration",
+            "totaldebt(atmigration)": "total_debt_at_migration",
+            "totaldebtafteradjustment": "total_debt_after_adjustment",
+            "totaldebt(afteradjustment)": "total_debt_after_adjustment",
+            "status": "status",
+            "dateapplied": "date_applied",
+            "dateapproved": "date_approved",
+            "userwhoraisedadjustment": "user_who_raised_adjustment",
+            "userwhoraisedtheadjustment": "user_who_raised_adjustment",
+            "userwhoapprovedadjustment": "user_who_approved_adjustment",
+            "userwhoapprovedtheadjustment": "user_who_approved_adjustment",
+            "businessunit": "business_unit",
+            "undertaking": "undertaking",
+            "remark": "remark"
+        }
+    },
+    "customers": {
+        "filename": "Customer_*.xlsx",
+        "mapping": {
+            "accountnumber": "account_number",
+            "accountname": "account_name",
+            "accountaddress": "account_address",
+            "businessunit": "business_unit",
+            "undertaking": "undertaking",
+            "accountofficer": "account_officer",
+            "dtname": "dt_name",
+            "feeder": "feeder",
+            "closingbalance": "closing_balance",
+            "batch": "batch",
+            "setupdate": "setup_date",
+            "customerstatus": "customer_status",
+            "lastpaydatepredeactivation": "last_pay_date_pre_deactivation",
+            "officertype": "officer_type",
+            "staffid": "staff_id",
+            "lastpayamtpredeactivation": "last_pay_amt_pre_deactivation",
+            "feederband": "feeder_band"
+        },
+        "date_cols": [
+            "setup_date",
+            "last_pay_date_pre_deactivation"
+        ]
+    }
+}

@@ -1,0 +1,855 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    /* Premium Styling for Admin Staff Management */
+    .admin-header {
+        margin-bottom: 30px;
+    }
+    .admin-header h1 {
+        font-size: 28px;
+        font-weight: 800;
+        margin-bottom: 5px;
+        background: linear-gradient(90deg, var(--primary-color), #f9a8d4);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    
+    .admin-card {
+        background: var(--card-bg);
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+        overflow: hidden;
+    }
+    
+    .admin-tabs {
+        display: flex;
+        gap: 10px;
+        padding: 15px 20px 0;
+        border-bottom: 1px solid var(--border-color);
+        background: rgba(0,0,0,0.02);
+    }
+    
+    .admin-tab {
+        padding: 12px 24px;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 14px;
+        color: var(--text-muted);
+        border-bottom: 3px solid transparent;
+        transition: all 0.3s ease;
+        border-radius: 8px 8px 0 0;
+    }
+    
+    .admin-tab:hover {
+        color: var(--text-color);
+        background: rgba(255,255,255,0.05);
+    }
+    
+    .admin-tab.active {
+        color: var(--primary-color);
+        border-bottom: 3px solid var(--primary-color);
+        background: var(--card-bg);
+    }
+    
+    .admin-card-body {
+        padding: 25px;
+    }
+    
+    /* Table Styling */
+    .premium-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 15px;
+        font-size: 14px;
+    }
+    
+    .premium-table th {
+        background-color: rgba(0,0,0,0.03);
+        color: var(--text-muted);
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 12px;
+        letter-spacing: 0.5px;
+        padding: 15px;
+        text-align: left;
+        border-bottom: 2px solid var(--border-color);
+    }
+    
+    .premium-table td {
+        padding: 15px;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--text-color);
+        vertical-align: middle;
+    }
+    
+    .premium-table tr:hover {
+        background-color: rgba(243, 44, 145, 0.03);
+    }
+    
+    .badge {
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        display: inline-block;
+    }
+    
+    .action-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        border: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin-right: 5px;
+        color: white;
+    }
+    
+    .btn-approve { background: var(--success-color); }
+    .btn-approve:hover { background: #059669; transform: scale(1.05); }
+    
+    .btn-reject { background: var(--danger-color); }
+    .btn-reject:hover { background: #dc2626; transform: scale(1.05); }
+    
+    /* Forms */
+    .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-bottom: 20px;
+    }
+    
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-muted);
+    }
+    
+    .form-control {
+        width: 100%;
+        padding: 12px 15px;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-color);
+        color: var(--text-color);
+        transition: all 0.3s;
+        font-family: inherit;
+    }
+    
+    .form-control:focus {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(243, 44, 145, 0.1);
+        outline: none;
+    }
+    
+    .btn-submit {
+        background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
+        color: white;
+        border: none;
+        padding: 12px 25px;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 15px;
+    }
+    
+    .btn-submit:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 15px rgba(243, 44, 145, 0.2);
+    }
+    
+    .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+    
+    .section-header h3 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 700;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="admin-header">
+    <h1>Staff Management</h1>
+    <p style="color: var(--text-muted); margin: 0;">Manage user profiles, approve requests, and perform bulk uploads.</p>
+</div>
+
+<div class="admin-card">
+    <div class="admin-tabs">
+        <div class="admin-tab active" onclick="switchAdminTab('pending')" id="tab-pending">
+            <i class="fas fa-clock" style="margin-right: 8px;"></i>Pending Requests
+        </div>
+        <div class="admin-tab" onclick="switchAdminTab('create')" id="tab-create">
+            <i class="fas fa-user-plus" style="margin-right: 8px;"></i>Create User
+        </div>
+        <div class="admin-tab" onclick="switchAdminTab('modify')" id="tab-modify">
+            <i class="fas fa-user-edit" style="margin-right: 8px;"></i>Modify User
+        </div>
+    </div>
+
+    <div class="admin-card-body">
+        <!-- PENDING REQUESTS -->
+        <div id="section-pending" class="admin-section active" style="display: block;">
+            <div class="section-header">
+                <h3>Awaiting Approval</h3>
+                <button class="btn-submit" style="padding: 8px 15px; font-size: 13px;" onclick="loadPendingRequests()">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+            
+            <div style="overflow-x: auto;">
+                <table class="premium-table">
+                    <thead>
+                        <tr>
+                            <th>Action</th>
+                            <th>Staff ID</th>
+                            <th>Full Name</th>
+                            <th>Username</th>
+                            <th>Type</th>
+                            <th>Business Unit</th>
+                            <th>Submitted At</th>
+                            <th style="text-align: center;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pending-tbody">
+                        <tr><td colspan="8" style="text-align: center; color: var(--text-muted);">Loading requests...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- CREATE USER (SINGLE / BULK) -->
+        <div id="section-create" class="admin-section" style="display: none;">
+            <div style="display: flex; gap: 15px; margin-bottom: 25px;">
+                <button class="btn-submit" id="btn-mode-single" onclick="switchCreateMode('single')" style="flex: 1; justify-content: center;">Single Registration</button>
+                <button class="btn-submit" id="btn-mode-bulk" onclick="switchCreateMode('bulk')" style="flex: 1; justify-content: center; background: rgba(0,0,0,0.05); color: var(--text-color); border: 1px solid var(--border-color);">Bulk Upload</button>
+            </div>
+            
+            <!-- SINGLE REGISTRATION MODE -->
+            <div id="create-mode-single" style="display: block;">
+                <div class="section-header">
+                    <h3>Register Single Staff</h3>
+                </div>
+                <p style="color: var(--text-muted); margin-top: -10px; margin-bottom: 25px;">Directly create a new staff profile. No approval required.</p>
+            
+            <form id="singleStaffForm">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>First Name</label>
+                        <input type="text" id="s_firstname" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Surname</label>
+                        <input type="text" id="s_surname" class="form-control" required>
+                    </div>
+                </div>
+
+                <div class="form-grid">
+
+                    <div class="form-group">
+                        <label>Staff ID</label>
+                        <input type="text" id="s_staffid" class="form-control" required>
+                    </div>
+                </div>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="s_email" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Phone Number</label>
+                        <input type="text" id="s_phone" class="form-control" required>
+                    </div>
+                </div>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Officer Type</label>
+                        <select id="s_officertype" class="form-control" required>
+                            <option value="">Select Type</option>
+                            <option value="DMO">DMO</option>
+                            <option value="Vendor">Vendor</option>
+                            <option value="Team Lead">Team Lead</option>
+                            <option value="Specialist">Specialist</option>
+                            <option value="Analyst">Analyst</option>
+                            <option value="Management">Management</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Business Unit</label>
+                        <select id="s_bu" class="form-control" required>
+                            <option value="">Select BU</option>
+                            <option value="AKOWONJO">AKOWONJO</option>
+                            <option value="ABULE EGBA">ABULE EGBA</option>
+                            <option value="IKEJA">IKEJA</option>
+                            <option value="IKORODU">IKORODU</option>
+                            <option value="OSHODI">OSHODI</option>
+                            <option value="SHOMOLU">SHOMOLU</option>
+                            <option value="CHQ">CHQ</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-group" style="margin-bottom: 25px; width: calc(50% - 10px);">
+                    <label>Role</label>
+                    <select id="s_role" class="form-control" required>
+                        <option value="User">User</option>
+                        <option value="Vendor">Vendor</option>
+                        <option value="Admin">Admin</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="btn-submit" id="singleSubmitBtn">
+                    <i class="fas fa-user-check"></i> Register Staff
+                </button>
+            </form>
+            </div>
+
+            <!-- BULK UPLOAD MODE -->
+            <div id="create-mode-bulk" style="display: none;">
+                <div class="section-header">
+                    <h3>Bulk Upload Staff</h3>
+                </div>
+            <p style="color: var(--text-muted); margin-top: -10px; margin-bottom: 25px;">Upload an Excel (.xlsx) or CSV file containing multiple staff details.</p>
+            
+            <div style="margin-bottom: 30px;">
+                <a href="/admin/staff/template" class="btn-submit" style="background: var(--border-color); color: var(--text-color); text-decoration: none;">
+                    <i class="fas fa-download"></i> Download Template
+                </a>
+            </div>
+            
+            <form id="bulkUploadForm" style="background: rgba(0,0,0,0.02); padding: 25px; border-radius: 12px; border: 1px dashed var(--primary-color);">
+                <div class="form-group" style="margin-bottom: 20px;">
+                    <label style="text-align: center; font-size: 16px; margin-bottom: 15px;">Select File (.csv, .xlsx)</label>
+                    <input type="file" id="bulkFile" class="form-control" style="border: none; background: white; padding: 15px; cursor: pointer;" accept=".csv, .xlsx, .xls" required>
+                </div>
+                <div style="text-align: center;">
+                    <button type="submit" class="btn-submit" id="bulkUploadBtn">
+                        <i class="fas fa-upload"></i> Process Upload
+                    </button>
+                </div>
+            </form>
+            
+            <div id="uploadResult" style="margin-top: 20px; padding: 15px; border-radius: 8px; display: none; font-weight: 500;"></div>
+            </div>
+        </div>
+        
+        <!-- MODIFY USER -->
+        <div id="section-modify" class="admin-section" style="display: none;">
+            <div class="section-header">
+                <h3>Modify Existing Staff</h3>
+                <button class="btn-submit" style="padding: 8px 15px; font-size: 13px;" onclick="loadAllStaff()">
+                    <i class="fas fa-sync-alt"></i> Refresh List
+                </button>
+            </div>
+            
+            <div style="overflow-x: auto;">
+                <table class="premium-table">
+                    <thead>
+                        <tr>
+                            <th>Staff ID</th>
+                            <th>Full Name</th>
+                            <th>Username</th>
+                            <th>Role</th>
+                            <th>Business Unit</th>
+                            <th>Last Login</th>
+                            <th style="text-align: center;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="all-staff-tbody">
+                        <tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Loading staff records...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+    </div>
+</div>
+
+<!-- Modify User Modal -->
+<div id="modifyModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center;">
+    <div style="background: var(--card-bg); width: 600px; max-width: 90%; border-radius: 12px; padding: 30px; box-shadow: 0 15px 40px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0; font-size: 20px; font-weight: 700;">Modify Staff Profile</h3>
+            <button onclick="closeModifyModal()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text-muted);">&times;</button>
+        </div>
+        
+        <form id="modifyStaffForm">
+            <input type="hidden" id="m_userid">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>First Name</label>
+                    <input type="text" id="m_firstname" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label>Surname</label>
+                    <input type="text" id="m_surname" class="form-control" required>
+                </div>
+            </div>
+            <div class="form-grid">
+
+                <div class="form-group">
+                    <label>Staff ID</label>
+                    <input type="text" id="m_staffid" class="form-control" required>
+                </div>
+            </div>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="m_email" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Phone Number</label>
+                    <input type="text" id="m_phone" class="form-control">
+                </div>
+            </div>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Officer Type</label>
+                    <select id="m_officertype" class="form-control" required>
+                        <option value="">Select Type</option>
+                        <option value="DMO">DMO</option>
+                        <option value="Vendor">Vendor</option>
+                        <option value="Team Lead">Team Lead</option>
+                        <option value="Specialist">Specialist</option>
+                        <option value="Analyst">Analyst</option>
+                        <option value="Management">Management</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Business Unit</label>
+                    <select id="m_bu" class="form-control" required>
+                        <option value="">Select BU</option>
+                        <option value="AKOWONJO">AKOWONJO</option>
+                        <option value="ABULE EGBA">ABULE EGBA</option>
+                        <option value="IKEJA">IKEJA</option>
+                        <option value="IKORODU">IKORODU</option>
+                        <option value="OSHODI">OSHODI</option>
+                        <option value="SHOMOLU">SHOMOLU</option>
+                        <option value="CHQ">CHQ</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Role</label>
+                    <select id="m_role" class="form-control" required>
+                        <option value="User">User</option>
+                        <option value="Vendor">Vendor</option>
+                        <option value="Admin">Admin</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Reset Password (Optional)</label>
+                    <input type="text" id="m_password" class="form-control" placeholder="Leave blank to keep current">
+                </div>
+            </div>
+            
+            <div style="text-align: right; margin-top: 20px;">
+                <button type="button" onclick="closeModifyModal()" class="btn-submit" style="background: rgba(0,0,0,0.05); color: var(--text-color); margin-right: 10px;">Cancel</button>
+                <button type="submit" class="btn-submit" id="modifySubmitBtn">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+</div>
+
+<!-- Review Pending Update Modal -->
+<div id="reviewModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center;">
+    <div style="background: var(--bg-color); width: 800px; max-width: 95%; max-height: 90vh; overflow-y: auto; border-radius: 12px; padding: 30px; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px;">
+            <h2 style="margin: 0; color: var(--text-color); font-size: 20px;">Review Pending Request</h2>
+            <button onclick="closeReviewModal()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text-muted);">&times;</button>
+        </div>
+        
+        <div id="reviewContent" style="margin-bottom: 25px;">
+            <!-- Content populated by JS -->
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--border-color); padding-top: 20px;">
+            <button type="button" onclick="closeReviewModal()" class="btn-submit" style="background: rgba(0,0,0,0.05); color: var(--text-color);">Close</button>
+            <button type="button" id="btnModalReject" class="btn-submit" style="background: var(--danger-color); color: white;">Reject</button>
+            <button type="button" id="btnModalApprove" class="btn-submit" style="background: var(--success-color); color: white;">Approve</button>
+        </div>
+    </div>
+</div>
+
+<script>
+let pendingRequestsData = [];
+function switchAdminTab(tab) {
+    document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.admin-section').forEach(s => s.style.display = 'none');
+    
+    document.getElementById('tab-' + tab).classList.add('active');
+    document.getElementById('section-' + tab).style.display = 'block';
+    
+    if (tab === 'pending') {
+        loadPendingRequests();
+    }
+}
+
+async function loadPendingRequests() {
+    const tbody = document.getElementById('pending-tbody');
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 30px; color: var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> Loading requests...</td></tr>';
+    
+    try {
+        const res = await fetch('/api/staff/pending');
+        const data = await res.json();
+        
+        if (data.success) {
+            pendingRequestsData = data.data;
+            tbody.innerHTML = '';
+            if (data.data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 30px; color: var(--text-muted);">No pending requests found.</td></tr>';
+                return;
+            }
+            
+            data.data.forEach(req => {
+                const isCreate = req.action_type === 'CREATE';
+                const actionBadge = isCreate ? 
+                    '<span class="badge" style="background: rgba(16, 185, 129, 0.15); color: var(--success-color);">CREATE</span>' : 
+                    '<span class="badge" style="background: rgba(245, 158, 11, 0.15); color: var(--warning-color);">UPDATE</span>';
+                    
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${actionBadge}</td>
+                    <td style="font-weight: 600;">${req.staff_id || '--'}</td>
+                    <td>${(req.first_name || '') + ' ' + (req.surname || '')}</td>
+                    <td>${req.username || '--'}</td>
+                    <td><span class="badge" style="background: rgba(0,0,0,0.05); color: var(--text-color);">${req.officer_type || '--'}</span></td>
+                    <td>${req.business_unit || '--'}</td>
+                    <td style="color: var(--text-muted); font-size: 12px;">${new Date(req.submitted_at).toLocaleString()}</td>
+                    <td style="text-align: center; white-space: nowrap;">
+                        <button class="action-btn" style="color: var(--primary-color);" title="View Details" onclick="openReviewModal(${req.id})"><i class="fas fa-eye"></i></button>
+                        <button class="action-btn btn-approve" title="Approve" onclick="handleRequest(${req.id}, 'approve')"><i class="fas fa-check"></i></button>
+                        <button class="action-btn btn-reject" title="Reject" onclick="handleRequest(${req.id}, 'reject')"><i class="fas fa-times"></i></button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--danger-color); padding: 30px;">Failed to load requests. Please try again.</td></tr>';
+    }
+}
+
+async function handleRequest(reqId, action) {
+    if (!confirm(`Are you sure you want to ${action} this request?`)) return;
+    
+    try {
+        const res = await fetch(`/api/staff/${action}/${reqId}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            alert(`Request ${action}d successfully!`);
+            loadPendingRequests();
+        } else {
+            alert(`Error: ${data.message}`);
+        }
+    } catch (e) {
+        alert('Error communicating with server.');
+    }
+}
+
+function closeReviewModal() {
+    document.getElementById('reviewModal').style.display = 'none';
+}
+
+async function openReviewModal(reqId) {
+    const req = pendingRequestsData.find(r => r.id === reqId);
+    if (!req) return;
+
+    if (req.action_type === 'UPDATE' && allStaffData.length === 0) {
+        document.getElementById('reviewContent').innerHTML = '<p>Loading staff data...</p>';
+        document.getElementById('reviewModal').style.display = 'flex';
+        await loadAllStaff();
+    }
+    
+    const content = document.getElementById('reviewContent');
+    const btnApprove = document.getElementById('btnModalApprove');
+    const btnReject = document.getElementById('btnModalReject');
+    
+    btnApprove.onclick = () => { closeReviewModal(); handleRequest(reqId, 'approve'); };
+    btnReject.onclick = () => { closeReviewModal(); handleRequest(reqId, 'reject'); };
+    
+    if (req.action_type === 'CREATE') {
+        let html = '<h3 style="margin-top:0;">New Staff Profile</h3><table style="width:100%; border-collapse: collapse;">';
+        const fields = ['staff_id', 'first_name', 'surname', 'email', 'phone_number', 'officer_type', 'business_unit', 'role', 'name_official', 'name_variant'];
+        fields.forEach(f => {
+            html += `<tr><td style="padding:8px; border-bottom:1px solid var(--border-color); font-weight:600; width: 40%;">${f.replace('_', ' ').toUpperCase()}</td><td style="padding:8px; border-bottom:1px solid var(--border-color);">${req[f] || '--'}</td></tr>`;
+        });
+        html += '</table>';
+        content.innerHTML = html;
+    } else {
+        const existing = allStaffData.find(s => s.staff_id === req.staff_id);
+        let html = '<h3 style="margin-top:0;">Profile Update Comparison</h3>';
+        if (!existing) {
+            html += '<p style="color:var(--danger-color);">Error: Existing staff record not found.</p>';
+            content.innerHTML = html;
+        } else {
+            html += '<table style="width:100%; border-collapse: collapse;"><tr><th style="text-align:left; padding:8px; border-bottom:2px solid var(--border-color);">Field</th><th style="text-align:left; padding:8px; border-bottom:2px solid var(--border-color);">Previous Information</th><th style="text-align:left; padding:8px; border-bottom:2px solid var(--border-color);">New Information</th></tr>';
+            const fields = ['first_name', 'surname', 'email', 'phone_number', 'officer_type', 'business_unit', 'role', 'name_official', 'name_variant'];
+            let hasChanges = false;
+            
+            fields.forEach(f => {
+                const oldVal = existing[f] || '';
+                const newVal = req[f] || '';
+                if (oldVal !== newVal && newVal !== '') {
+                    hasChanges = true;
+                    html += `<tr>
+                        <td style="padding:8px; border-bottom:1px solid var(--border-color); font-weight:600;">${f.replace('_', ' ').toUpperCase()}</td>
+                        <td style="padding:8px; border-bottom:1px solid var(--border-color); color: var(--danger-color); text-decoration: line-through;">${oldVal || '--'}</td>
+                        <td style="padding:8px; border-bottom:1px solid var(--border-color); color: var(--success-color); font-weight: 600;">${newVal}</td>
+                    </tr>`;
+                }
+            });
+            
+            if (!hasChanges) {
+                html += '<tr><td colspan="3" style="padding:15px; text-align:center;">No changes detected.</td></tr>';
+            }
+            html += '</table>';
+            content.innerHTML = html;
+        }
+    }
+    
+    document.getElementById('reviewModal').style.display = 'flex';
+}
+
+// Single Staff Submission
+document.getElementById('singleStaffForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('singleSubmitBtn');
+    
+    const payload = {
+        first_name: document.getElementById('s_firstname').value,
+        surname: document.getElementById('s_surname').value,
+        staff_id: document.getElementById('s_staffid').value,
+        email: document.getElementById('s_email').value,
+        phone_number: document.getElementById('s_phone').value,
+        officer_type: document.getElementById('s_officertype').value,
+        business_unit: document.getElementById('s_bu').value,
+        role: document.getElementById('s_role').value
+    };
+    
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+    btn.disabled = true;
+    
+    try {
+        const res = await fetch('/api/admin/staff/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            alert('Staff registered successfully! Default password is their Staff ID.');
+            document.getElementById('singleStaffForm').reset();
+        } else {
+            alert(`Error: ${data.message}`);
+        }
+    } catch (err) {
+        alert('Network error while registering staff.');
+    } finally {
+        btn.innerHTML = '<i class="fas fa-user-check"></i> Register Staff';
+        btn.disabled = false;
+    }
+});
+
+// Bulk Upload Submission
+document.getElementById('bulkUploadForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('bulkUploadBtn');
+    const resDiv = document.getElementById('uploadResult');
+    const file = document.getElementById('bulkFile').files[0];
+    
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+    btn.disabled = true;
+    resDiv.style.display = 'none';
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+        const res = await fetch('/api/staff/bulk-upload', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        
+        resDiv.style.display = 'block';
+        if (data.success) {
+            resDiv.style.backgroundColor = 'rgba(16, 185, 129, 0.15)';
+            resDiv.style.color = 'var(--success-color)';
+            resDiv.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+            resDiv.innerHTML = `<i class="fas fa-check-circle" style="margin-right: 8px;"></i> ${data.message}`;
+            document.getElementById('bulkUploadForm').reset();
+        } else {
+            resDiv.style.backgroundColor = 'rgba(239, 68, 68, 0.15)';
+            resDiv.style.color = 'var(--danger-color)';
+            resDiv.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+            resDiv.innerHTML = `<i class="fas fa-exclamation-circle" style="margin-right: 8px;"></i> ${data.message}`;
+        }
+    } catch (err) {
+        resDiv.style.display = 'block';
+        resDiv.style.backgroundColor = 'rgba(239, 68, 68, 0.15)';
+        resDiv.style.color = 'var(--danger-color)';
+        resDiv.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+        resDiv.innerHTML = `<i class="fas fa-exclamation-circle" style="margin-right: 8px;"></i> Upload failed. Network error.`;
+    } finally {
+        btn.innerHTML = '<i class="fas fa-upload"></i> Process Upload';
+        btn.disabled = false;
+    }
+});
+
+// Initial load
+document.addEventListener('DOMContentLoaded', loadPendingRequests);
+
+// Additional Scripts for the updated schema
+function switchCreateMode(mode) {
+    document.getElementById('create-mode-single').style.display = 'none';
+    document.getElementById('create-mode-bulk').style.display = 'none';
+    
+    document.getElementById('btn-mode-single').style.background = 'rgba(0,0,0,0.05)';
+    document.getElementById('btn-mode-single').style.color = 'var(--text-color)';
+    document.getElementById('btn-mode-bulk').style.background = 'rgba(0,0,0,0.05)';
+    document.getElementById('btn-mode-bulk').style.color = 'var(--text-color)';
+    
+    document.getElementById('create-mode-' + mode).style.display = 'block';
+    const activeBtn = document.getElementById('btn-mode-' + mode);
+    activeBtn.style.background = 'linear-gradient(135deg, var(--primary-color), var(--primary-hover))';
+    activeBtn.style.color = 'white';
+}
+
+let allStaffData = [];
+
+async function loadAllStaff() {
+    const tbody = document.getElementById('all-staff-tbody');
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 30px; color: var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> Loading staff records...</td></tr>';
+    
+    try {
+        const res = await fetch('/api/admin/staff/all');
+        const data = await res.json();
+        
+        if (data.success) {
+            allStaffData = data.data;
+            tbody.innerHTML = '';
+            if (data.data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 30px; color: var(--text-muted);">No staff records found.</td></tr>';
+                return;
+            }
+            
+            data.data.forEach(staff => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td style="font-weight: 600;">${staff.staff_id || '--'}</td>
+                    <td>${(staff.first_name || '') + ' ' + (staff.surname || '')}</td>
+                    <td>${staff.username}</td>
+                    <td><span class="badge" style="background: rgba(0,0,0,0.05); color: var(--text-color);">${staff.role}</span></td>
+                    <td>${staff.business_unit || '--'}</td>
+                    <td style="color: var(--text-muted); font-size: 12px;">${staff.last_online_login ? new Date(staff.last_online_login).toLocaleString() : 'Never'}</td>
+                    <td style="text-align: center;">
+                        <button class="btn-submit" style="padding: 6px 12px; font-size: 12px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--border-color);" onclick="openModifyModal(${staff.id})">
+                            <i class="fas fa-edit"></i> Modify
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--danger-color); padding: 30px;">Failed to load staff records.</td></tr>';
+    }
+}
+
+function openModifyModal(id) {
+    const staff = allStaffData.find(s => s.id === id);
+    if (!staff) return;
+    
+    document.getElementById('m_userid').value = staff.id;
+    document.getElementById('m_firstname').value = staff.first_name || '';
+    document.getElementById('m_surname').value = staff.surname || '';
+    document.getElementById('m_staffid').value = staff.staff_id || '';
+    document.getElementById('m_email').value = staff.email || '';
+    document.getElementById('m_phone').value = staff.phone_number || '';
+    document.getElementById('m_officertype').value = staff.officer_type || '';
+    document.getElementById('m_bu').value = staff.business_unit || '';
+    document.getElementById('m_role').value = staff.role || 'User';
+    document.getElementById('m_password').value = '';
+    
+    document.getElementById('modifyModal').style.display = 'flex';
+}
+
+function closeModifyModal() {
+    document.getElementById('modifyModal').style.display = 'none';
+}
+
+document.getElementById('modifyStaffForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('modifySubmitBtn');
+    const id = document.getElementById('m_userid').value;
+    
+    const payload = {
+        first_name: document.getElementById('m_firstname').value,
+        surname: document.getElementById('m_surname').value,
+        staff_id: document.getElementById('m_staffid').value,
+        email: document.getElementById('m_email').value,
+        phone_number: document.getElementById('m_phone').value,
+        officer_type: document.getElementById('m_officertype').value,
+        business_unit: document.getElementById('m_bu').value,
+        role: document.getElementById('m_role').value,
+        password: document.getElementById('m_password').value
+    };
+    
+    btn.innerHTML = 'Saving...';
+    btn.disabled = true;
+    
+    try {
+        const res = await fetch(`/api/admin/staff/update/${id}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            alert('Staff profile updated successfully!');
+            closeModifyModal();
+            loadAllStaff(); // refresh the list
+        } else {
+            alert(`Error: ${data.message}`);
+        }
+    } catch (err) {
+        alert('Network error while updating staff.');
+    } finally {
+        btn.innerHTML = 'Save Changes';
+        btn.disabled = false;
+    }
+});
+
+const originalSwitchAdminTab = switchAdminTab;
+switchAdminTab = function(tab) {
+    originalSwitchAdminTab(tab);
+    if (tab === 'modify') {
+        loadAllStaff();
+    }
+};
+</script>
+{% endblock %}

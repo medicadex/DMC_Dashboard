@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}DMC Management Suite{% endblock %}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- PWA Manifest & Theme -->
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}?v={{ version }}">
+    <meta name="theme-color" content="#f32c91">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='ie_logo.png') }}?v={{ version }}">
+    
+    <style>
+        :root[data-theme="dark"] {
+            --bg-color: #0f172a;
+            --sidebar-bg: #1e293b;
+            --topbar-bg: #1e293b;
+            --card-bg: #1e293b;
+            --text-color: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --primary-color: #f32c91; /* IE Pink for dark mode */
+            --primary-hover: #e00c7e;
+            --danger-color: #ef4444;
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+        }
+
+        :root[data-theme="light"] {
+            --bg-color: #f8fafc;
+            --sidebar-bg: #ffffff;
+            --topbar-bg: #ffffff;
+            --card-bg: #ffffff;
+            --text-color: #0f172a;
+            --text-muted: #64748b;
+            --border-color: #e2e8f0;
+            --primary-color: #e00c7e; /* IE Pink */
+            --primary-hover: #bf086a;
+            --danger-color: #dc2626;
+            --success-color: #059669;
+            --warning-color: #d97706;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            /* Responsive base font size: scales between 14px and 18px based on viewport width */
+            font-size: clamp(14px, 0.4vw + 12px, 18px);
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            transition: background-color 0.3s ease;
+            font-size: 1rem; /* Inherit fluid base */
+        }
+
+        /* Main Content Area */
+        .main-container {
+            display: flex;
+            flex-grow: 1;
+            overflow: hidden;
+        }
+
+        /* Sidebar Styles */
+        .sidebar {
+            width: 280px;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s ease;
+            z-index: 100;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .nav-links {
+            flex-grow: 1;
+            padding: 20px 0;
+            overflow-y: auto;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 25px;
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: all 0.2s;
+            border-left: 4px solid transparent;
+            font-weight: 500;
+        }
+
+        .nav-item i {
+            width: 24px;
+            margin-right: 12px;
+            font-size: 18px;
+            text-align: center;
+        }
+
+        .nav-item:hover {
+            background-color: rgba(243, 44, 145, 0.05);
+            color: var(--primary-color);
+        }
+
+        .nav-item.active {
+            background-color: rgba(243, 44, 145, 0.1);
+            color: var(--primary-color);
+            border-left-color: var(--primary-color);
+        }
+
+        .sidebar-footer {
+            padding: 20px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .user-avatar {
+            width: 35px;
+            height: 35px;
+            background-color: var(--primary-color);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+
+        .logout-btn {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            padding: 10px;
+            color: var(--danger-color);
+            text-decoration: none;
+            border-radius: 6px;
+            transition: background 0.2s;
+        }
+
+        .logout-btn:hover {
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Topbar Styles */
+        .topbar {
+            height: 65px;
+            background-color: var(--topbar-bg);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 30px;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+
+        .menu-toggle {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--text-color);
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        @media (max-width: 992px) {
+            .sidebar {
+                position: fixed;
+                left: -280px;
+                height: 100vh;
+            }
+            .sidebar.open {
+                left: 0;
+            }
+            .menu-toggle {
+                display: block;
+            }
+        }
+
+        .theme-toggle {
+            cursor: pointer;
+            color: var(--text-muted);
+            background: none;
+            border: none;
+            font-size: 20px;
+            padding: 5px;
+            transition: color 0.2s;
+        }
+        
+        .theme-toggle:hover {
+            color: var(--text-color);
+        }
+
+        /* Content Canvas */
+        .content-canvas {
+            flex-grow: 1;
+            padding: 30px;
+            overflow-y: auto;
+        }
+
+        /* Cards */
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body>
+
+    <div class="main-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <img src="{{ url_for('static', filename='ie_logo.png') }}" alt="Logo" style="height: 40px; border-radius: 4px;">
+                <div style="display: flex; flex-direction: column;">
+                    <span style="font-weight: 700; color: var(--primary-color); font-size: 18px;">IE DMC</span>
+                    <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Management Suite</span>
+                </div>
+            </div>
+
+            <nav class="nav-links">
+                <a href="{{ url_for('index') }}" class="nav-item {% if active_page == 'home' %}active{% endif %}">
+                    <i class="fas fa-home"></i>
+                    <span>Homepage</span>
+                </a>
+                <a href="{{ url_for('dashboard') }}" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
+                    <i class="fas fa-search"></i>
+                    <span>Account Lookup</span>
+                </a>
+                <a href="{{ url_for('job_form') }}" class="nav-item {% if active_page == 'job_form' %}active{% endif %}">
+                    <i class="fas fa-file-invoice"></i>
+                    <span>Job Form Creator</span>
+                </a>
+                <a href="{{ url_for('payment_listing') }}" class="nav-item {% if active_page == 'payments' %}active{% endif %}">
+                    <i class="fas fa-list-ul"></i>
+                    <span>Payment Listing</span>
+                </a>
+                <a href="{{ url_for('customer_listing') }}" class="nav-item {% if active_page == 'customers' %}active{% endif %}">
+                    <i class="fas fa-users"></i>
+                    <span>Customer Listing</span>
+                </a>
+                <a href="{{ url_for('performance_rank') }}" class="nav-item {% if active_page == 'performance' %}active{% endif %}">
+                    <i class="fas fa-medal"></i>
+                    <span>Performance Rank</span>
+                </a>
+                {% if session.get('user') and session['user']['role'] != 'Vendor' %}
+                <a href="{{ url_for('report_uploader') }}" class="nav-item {% if active_page == 'upload' %}active{% endif %}">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <span>Report Uploader</span>
+                </a>
+                {% endif %}
+                {% if session.get('user') and session['user']['role'] == 'Admin' %}
+                <a href="{{ url_for('admin_upload_tables') }}" class="nav-item {% if active_page == 'admin_upload' %}active{% endif %}">
+                    <i class="fas fa-database"></i>
+                    <span>Admin Table Manager</span>
+                </a>
+                <a href="{{ url_for('admin_staff_management') }}" class="nav-item {% if active_page == 'admin_staff' %}active{% endif %}">
+                    <i class="fas fa-users-cog"></i>
+                    <span>Staff Management</span>
+                </a>
+                {% endif %}
+            </nav>
+
+            <div class="sidebar-footer">
+                {% if session.get('user') %}
+                <div class="user-info">
+                    <div class="user-avatar">
+                        {{ (session['user']['full_name'] or session['user']['username'])[0] | upper }}
+                    </div>
+                    <div style="display: flex; flex-direction: column; overflow: hidden;">
+                        <span style="font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{{ session['user']['full_name'] }}">
+                            {{ session['user']['full_name'] }}
+                        </span>
+                        <span style="font-size: 12px; color: var(--text-muted);">{{ session['user']['role'] }}</span>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <a href="#" class="nav-item" onclick="openProfileModal()" style="margin-bottom: 5px; padding: 10px; border-radius: 6px;">
+                    <i class="fas fa-user-edit" style="margin-right: 10px;"></i>
+                    <span>My Profile</span>
+                </a>
+                
+                <a href="{{ url_for('logout') }}" class="logout-btn">
+                    <i class="fas fa-sign-out-alt" style="margin-right: 10px;"></i>
+                    <span>Logout</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Topbar -->
+            <header class="topbar">
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <button class="menu-toggle" id="menuToggle">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <h2 style="margin:0; font-size: 20px; font-weight: 700; color: var(--text-color);">
+                        {% block page_title %}{% endblock %}
+                    </h2>
+                </div>
+                
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <div id="userWelcome" style="display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--text-color); font-weight: 500;">
+                        <span style="color: var(--text-muted);">Welcome,</span>
+                        <span style="color: var(--primary-color); font-weight: 700;">{{ session['user']['full_name'] or session['user']['username'] }}</span>
+                    </div>
+                    <button class="theme-toggle" id="themeToggleBtn" title="Toggle Theme">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Canvas -->
+            <main class="content-canvas">
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <script>
+        // --- Actively Unregister All Service Workers to Force Clean Updates ---
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+                if (registrations.length > 0) {
+                    console.log('SW: Found active workers. Unregistering all for version update...');
+                    for(let registration of registrations) {
+                        registration.unregister();
+                    }
+                    // Optional: clear cache as well from client side
+                    if ('caches' in window) {
+                        caches.keys().then(names => {
+                            for (let name of names) caches.delete(name);
+                        });
+                    }
+                    setTimeout(() => window.location.reload(), 500);
+                }
+            });
+        }
+
+        // Theme Toggling Logic
+        const toggleBtn = document.getElementById('themeToggleBtn');
+        const icon = toggleBtn.querySelector('i');
+        const htmlDoc = document.documentElement;
+
+        // Check local storage for theme
+        const savedTheme = localStorage.getItem('dmc_theme') || 'dark';
+        htmlDoc.setAttribute('data-theme', savedTheme);
+        updateIcon(savedTheme);
+
+        toggleBtn.addEventListener('click', () => {
+            const currentTheme = htmlDoc.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            htmlDoc.setAttribute('data-theme', newTheme);
+            localStorage.setItem('dmc_theme', newTheme);
+            updateIcon(newTheme);
+        });
+
+        function updateIcon(theme) {
+            if(theme === 'dark') {
+                icon.className = 'fas fa-sun'; // Show sun when dark
+            } else {
+                icon.className = 'fas fa-moon'; // Show moon when light
+            }
+        }
+
+        // Sidebar Toggle
+        const menuToggle = document.getElementById('menuToggle');
+        const sidebar = document.getElementById('sidebar');
+
+        if (menuToggle) {
+            menuToggle.addEventListener('click', () => {
+                sidebar.classList.toggle('open');
+            });
+        }
+
+        // Close sidebar when clicking outside on mobile
+        document.addEventListener('click', (e) => {
+            if (window.innerWidth <= 992) {
+                if (!sidebar.contains(e.target) && !menuToggle.contains(e.target) && sidebar.classList.contains('open')) {
+                    sidebar.classList.remove('open');
+                }
+            }
+        });
+    </script>
+    {% block scripts %}{% endblock %}
+
+<!-- Profile Modal -->
+<div id="profileModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+    <div style="background: var(--card-bg); width: 100%; max-width: 500px; padding: 25px; border-radius: 12px; border: 1px solid var(--border-color);">
+        <h3 style="margin-top: 0; margin-bottom: 20px;">Request Profile Update</h3>
+        <p style="font-size: 13px; color: var(--warning-color); margin-bottom: 15px;"><i class="fas fa-info-circle"></i> Staff ID cannot be modified. Updates require Admin approval.</p>
+        
+        <form id="profileUpdateForm">
+            <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                <div style="flex: 1;">
+                    <label style="display: block; font-size: 12px; margin-bottom: 5px; color: var(--text-muted);">First Name</label>
+                    <input type="text" id="p_firstname" class="form-control" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);" value="{{ session.get('user', {}).get('first_name', '') }}">
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; font-size: 12px; margin-bottom: 5px; color: var(--text-muted);">Surname</label>
+                    <input type="text" id="p_surname" class="form-control" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);" value="{{ session.get('user', {}).get('surname', '') }}">
+                </div>
+            </div>
+            
+            <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                <div style="flex: 1;">
+                    <label style="display: block; font-size: 12px; margin-bottom: 5px; color: var(--text-muted);">Email</label>
+                    <input type="email" id="p_email" class="form-control" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);" value="{{ session.get('user', {}).get('email', '') }}">
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; font-size: 12px; margin-bottom: 5px; color: var(--text-muted);">Phone Number</label>
+                    <input type="text" id="p_phone" class="form-control" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);" value="{{ session.get('user', {}).get('phone_number', '') }}">
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 15px; margin-bottom: 20px;">
+                <div style="flex: 1;">
+                    <label style="display: block; font-size: 12px; margin-bottom: 5px; color: var(--text-muted);">Officer Type</label>
+                    <select id="p_officertype" class="form-control" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);">
+                        <option value="">Select Type</option>
+                        <option value="DMO" {% if session.get('user', {}).get('officer_type') == 'DMO' %}selected{% endif %}>DMO</option>
+                        <option value="Vendor" {% if session.get('user', {}).get('officer_type') == 'Vendor' %}selected{% endif %}>Vendor</option>
+                        <option value="Team Lead" {% if session.get('user', {}).get('officer_type') == 'Team Lead' %}selected{% endif %}>Team Lead</option>
+                        <option value="Specialist" {% if session.get('user', {}).get('officer_type') == 'Specialist' %}selected{% endif %}>Specialist</option>
+                        <option value="Analyst" {% if session.get('user', {}).get('officer_type') == 'Analyst' %}selected{% endif %}>Analyst</option>
+                        <option value="Management" {% if session.get('user', {}).get('officer_type') == 'Management' %}selected{% endif %}>Management</option>
+                    </select>
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; font-size: 12px; margin-bottom: 5px; color: var(--text-muted);">Business Unit</label>
+                    <select id="p_bu" class="form-control" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);">
+                        <option value="">Select BU</option>
+                        <option value="AKOWONJO" {% if session.get('user', {}).get('business_unit') == 'AKOWONJO' %}selected{% endif %}>AKOWONJO</option>
+                        <option value="ABULE EGBA" {% if session.get('user', {}).get('business_unit') == 'ABULE EGBA' %}selected{% endif %}>ABULE EGBA</option>
+                        <option value="IKEJA" {% if session.get('user', {}).get('business_unit') == 'IKEJA' %}selected{% endif %}>IKEJA</option>
+                        <option value="IKORODU" {% if session.get('user', {}).get('business_unit') == 'IKORODU' %}selected{% endif %}>IKORODU</option>
+                        <option value="OSHODI" {% if session.get('user', {}).get('business_unit') == 'OSHODI' %}selected{% endif %}>OSHODI</option>
+                        <option value="SHOMOLU" {% if session.get('user', {}).get('business_unit') == 'SHOMOLU' %}selected{% endif %}>SHOMOLU</option>
+                        <option value="CHQ" {% if session.get('user', {}).get('business_unit') == 'CHQ' %}selected{% endif %}>CHQ</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" onclick="document.getElementById('profileModal').style.display='none'" style="padding: 10px 15px; border-radius: 6px; border: none; background: var(--border-color); color: var(--text-color); cursor: pointer;">Cancel</button>
+                <button type="submit" id="profileSubmitBtn" style="padding: 10px 15px; border-radius: 6px; border: none; background: var(--primary-color); color: white; cursor: pointer;">Submit Request</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openProfileModal() {
+    document.getElementById("profileModal").style.display = "flex";
+}
+
+document.getElementById("profileUpdateForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("profileSubmitBtn");
+    btn.disabled = true;
+    btn.innerHTML = "Submitting...";
+    
+    const payload = {
+        action_type: "UPDATE",
+        username: "{{ session.get('user', {}).get('username', '') }}",
+        staff_id: "{{ session.get('user', {}).get('staff_id', '') }}",
+        first_name: document.getElementById("p_firstname").value,
+        surname: document.getElementById("p_surname").value,
+        email: document.getElementById("p_email").value,
+        phone_number: document.getElementById("p_phone").value,
+        officer_type: document.getElementById("p_officertype").value,
+        business_unit: document.getElementById("p_bu").value,
+        name_official: (document.getElementById("p_firstname").value + " " + document.getElementById("p_surname").value).trim()
+    };
+    
+    try {
+        const res = await fetch("/api/staff/request-profile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        alert(data.message);
+        if(data.success) {
+            document.getElementById("profileModal").style.display = "none";
+        }
+    } catch(err) {
+        alert("Error submitting request.");
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = "Submit Request";
+    }
+});
+</script>
+</body>
+
+</html>

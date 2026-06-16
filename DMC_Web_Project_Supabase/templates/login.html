@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - IE DMC Suite</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root[data-theme="dark"] {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-color: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --primary-color: #f32c91;
+            --primary-hover: #e00c7e;
+            --danger-color: #ef4444;
+            --success-color: #10b981;
+        }
+
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Inter', sans-serif;
+            padding: 20px;
+        }
+
+        .login-card {
+            background-color: var(--card-bg);
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 480px;
+            border: 1px solid var(--border-color);
+            text-align: center;
+        }
+
+        .logo-container {
+            margin-bottom: 25px;
+        }
+
+        .logo-img {
+            height: 60px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+        }
+
+        .logo-text {
+            font-size: 26px;
+            font-weight: 800;
+            color: var(--primary-color);
+            margin: 0;
+            letter-spacing: -1px;
+        }
+        
+        .logo-subtext {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-top: 5px;
+            font-weight: 500;
+        }
+
+        .tabs {
+            display: flex;
+            margin-bottom: 25px;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .tab {
+            flex: 1;
+            padding: 12px 0;
+            cursor: pointer;
+            font-weight: 600;
+            color: var(--text-muted);
+            transition: all 0.3s;
+        }
+
+        .tab.active {
+            color: var(--primary-color);
+            border-bottom: 2px solid var(--primary-color);
+            margin-bottom: -2px;
+        }
+
+        .form-section {
+            display: none;
+        }
+
+        .form-section.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        
+        .row {
+            display: flex;
+            gap: 15px;
+        }
+        .col {
+            flex: 1;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .form-control, .form-select {
+            width: 100%;
+            padding: 12px 16px;
+            background-color: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            color: var(--text-color);
+            font-size: 14px;
+            transition: all 0.2s;
+            box-sizing: border-box;
+            outline: none;
+        }
+        
+        .form-select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 16px center;
+        }
+
+        .form-control:focus, .form-select:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 4px rgba(243, 44, 145, 0.1);
+        }
+
+        .password-wrapper {
+            position: relative;
+        }
+
+        .toggle-password {
+            position: absolute;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            color: var(--text-muted);
+            transition: color 0.2s;
+        }
+
+        .toggle-password:hover {
+            color: var(--primary-color);
+        }
+
+        .btn-login {
+            width: 100%;
+            padding: 15px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 10px;
+        }
+
+        .btn-login:hover {
+            background-color: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(243, 44, 145, 0.2);
+        }
+
+        .btn-login:active {
+            transform: translateY(0);
+        }
+
+        .alert-message {
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 25px;
+            display: none;
+            font-weight: 500;
+        }
+        
+        .alert-error {
+            background-color: rgba(239, 68, 68, 0.1);
+            color: var(--danger-color);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+        
+        .alert-success {
+            background-color: rgba(16, 185, 129, 0.1);
+            color: var(--success-color);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+        
+        .alert-message.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="login-card">
+        <div class="logo-container">
+            <img src="{{ url_for('static', filename='ie_logo.png') }}?v={{ version }}" alt="IE Logo" class="logo-img">
+            <h1 class="logo-text">IE DMC SUITE</h1>
+            <div class="logo-subtext">Enterprise Web Edition</div>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('login')">Login</div>
+            <div class="tab" onclick="switchTab('create')">Create Profile</div>
+        </div>
+
+        <!-- LOGIN FORM -->
+        <div id="login-section" class="form-section active">
+            <div class="alert-message alert-error" id="loginErrorMsg"></div>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username">Staff Username</label>
+                    <input type="text" id="username" class="form-control" placeholder="e.g. jdoe" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Security Password</label>
+                    <div class="password-wrapper">
+                        <input type="password" id="password" class="form-control" placeholder="••••••••" required>
+                        <i class="far fa-eye toggle-password" onclick="toggleVisibility('password', this)"></i>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-login" id="loginBtn">Authorize Access</button>
+            </form>
+
+            <a href="{{ url_for('vendor_login') }}" class="redirect-link" style="display: inline-block; margin-top: 20px; color: var(--text-muted); text-decoration: none; font-size: 13px; font-weight: 700; transition: color 0.2s;" onmouseover="this.style.color='var(--primary-color)'" onmouseout="this.style.color='var(--text-muted)'">
+                <i class="fas fa-users-cog"></i> Vendor Login
+            </a>
+        </div>
+
+
+
+        <!-- RESET PASSWORD (3 FAILED ATTEMPTS) -->
+        <div id="reset-password-section" class="form-section">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <h3 style="margin-bottom: 10px; color: var(--primary-color);">Reset Password</h3>
+                <p style="font-size: 14px; color: var(--text-muted);">Too many failed attempts. Please verify your identity using your Staff ID.</p>
+            </div>
+            <div class="alert-message alert-error" id="resetErrorMsg"></div>
+            <div class="alert-message alert-success" id="resetSuccessMsg"></div>
+            <form id="resetForm">
+                <input type="hidden" id="resetUsername">
+                <div class="form-group">
+                    <label for="reset_staff_id">Staff ID Verification</label>
+                    <input type="text" id="reset_staff_id" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label for="reset_new_password">New Password</label>
+                    <div class="password-wrapper">
+                        <input type="password" id="reset_new_password" class="form-control" required>
+                        <i class="far fa-eye toggle-password" onclick="toggleVisibility('reset_new_password', this)"></i>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="reset_confirm_password">Confirm New Password</label>
+                    <div class="password-wrapper">
+                        <input type="password" id="reset_confirm_password" class="form-control" required>
+                        <i class="far fa-eye toggle-password" onclick="toggleVisibility('reset_confirm_password', this)"></i>
+                    </div>
+                </div>
+                <button type="submit" class="btn-login" id="resetBtn">Update Password</button>
+                <button type="button" class="btn-login" style="background-color: transparent; border: 1px solid var(--border-color); color: var(--text-muted); margin-top: 15px;" onclick="switchTab('login')">Back to Login</button>
+            </form>
+        </div>
+
+        <!-- CREATE PROFILE FORM -->
+        <div id="create-section" class="form-section">
+            <div class="alert-message alert-error" id="createErrorMsg"></div>
+            <div class="alert-message alert-success" id="createSuccessMsg"></div>
+            
+            <form id="createForm" style="height: 380px; overflow-y: auto; padding-right: 10px;">
+                <div class="row">
+                    <div class="form-group col">
+                        <label for="c_firstname">First Name</label>
+                        <input type="text" id="c_firstname" class="form-control" required>
+                    </div>
+                    <div class="form-group col">
+                        <label for="c_surname">Surname</label>
+                        <input type="text" id="c_surname" class="form-control" required>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="form-group col">
+                        <label for="c_username">Desired Username</label>
+                        <input type="text" id="c_username" class="form-control" required>
+                    </div>
+                    <div class="form-group col">
+                        <label for="c_staffid">Staff ID</label>
+                        <input type="text" id="c_staffid" class="form-control" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="c_password">Password</label>
+                    <div class="password-wrapper">
+                        <input type="password" id="c_password" class="form-control" placeholder="••••••••" required>
+                        <i class="far fa-eye toggle-password" onclick="toggleVisibility('c_password', this)"></i>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="form-group col">
+                        <label for="c_email">Email</label>
+                        <input type="email" id="c_email" class="form-control" required>
+                    </div>
+                    <div class="form-group col">
+                        <label for="c_phone">Phone</label>
+                        <input type="text" id="c_phone" class="form-control" required>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="form-group col">
+                        <label for="c_officertype">Officer Type</label>
+                        <select id="c_officertype" class="form-select" required>
+                            <option value="">Select Type</option>
+                            <option value="DMO">DMO</option>
+                            <option value="Vendor">Vendor</option>
+                            <option value="Team Lead">Team Lead</option>
+                            <option value="Specialist">Specialist</option>
+                            <option value="Analyst">Analyst</option>
+                            <option value="Management">Management</option>
+                        </select>
+                    </div>
+                    <div class="form-group col">
+                        <label for="c_bu">Business Unit</label>
+                        <select id="c_bu" class="form-select" required>
+                            <option value="">Select BU</option>
+                            <option value="AKOWONJO">AKOWONJO</option>
+                            <option value="ABULE EGBA">ABULE EGBA</option>
+                            <option value="IKEJA">IKEJA</option>
+                            <option value="IKORODU">IKORODU</option>
+                            <option value="OSHODI">OSHODI</option>
+                            <option value="SHOMOLU">SHOMOLU</option>
+                            <option value="CHQ">CHQ</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-login" id="createBtn">Request Profile</button>
+            </form>
+        </div>
+
+        <div style="margin-top: 30px; font-size: 12px; color: var(--text-muted);">
+            &copy; 2026 Ikeja Electric PLC. Internal Use Only.
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.form-section').forEach(s => s.classList.remove('active'));
+            
+            if (tab === 'login') {
+                document.querySelectorAll('.tab')[0].classList.add('active');
+                document.getElementById('login-section').classList.add('active');
+            } else {
+                document.querySelectorAll('.tab')[1].classList.add('active');
+                document.getElementById('create-section').classList.add('active');
+            }
+        }
+
+        function toggleVisibility(inputId, iconEl) {
+            const el = document.getElementById(inputId);
+            const type = el.getAttribute('type') === 'password' ? 'text' : 'password';
+            el.setAttribute('type', type);
+            iconEl.classList.toggle('fa-eye');
+            iconEl.classList.toggle('fa-eye-slash');
+        }
+
+        // Login Logic
+        const loginForm = document.getElementById('loginForm');
+        const loginBtn = document.getElementById('loginBtn');
+        const loginErrorMsg = document.getElementById('loginErrorMsg');
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            loginBtn.innerText = 'Authorizing...';
+            loginBtn.disabled = true;
+            loginErrorMsg.classList.remove('show');
+
+            try {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    window.location.href = '/';
+                } else {
+                    if (data.requires_reset) {
+                        document.getElementById('login-section').classList.remove('active');
+                        document.getElementById('reset-password-section').classList.add('active');
+                        document.getElementById('resetUsername').value = username;
+                    } else {
+                        loginErrorMsg.innerText = data.message || 'Authentication failed.';
+                        loginErrorMsg.classList.add('show');
+                    }
+                }
+            } catch (err) {
+                loginErrorMsg.innerText = 'Network error.';
+                loginErrorMsg.classList.add('show');
+            } finally {
+                loginBtn.innerText = 'Authorize Access';
+                loginBtn.disabled = false;
+            }
+        });
+
+
+        // Handle Forced Reset Password (3 Failed Attempts)
+        const resetForm = document.getElementById('resetForm');
+        const resetBtn = document.getElementById('resetBtn');
+        const resetErrorMsg = document.getElementById('resetErrorMsg');
+        const resetSuccessMsg = document.getElementById('resetSuccessMsg');
+        
+        resetForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('resetUsername').value;
+            const staff_id = document.getElementById('reset_staff_id').value;
+            const new_password = document.getElementById('reset_new_password').value;
+            const confirm_password = document.getElementById('reset_confirm_password').value;
+            
+            if (new_password !== confirm_password) {
+                resetErrorMsg.innerText = 'Passwords do not match.';
+                resetErrorMsg.classList.add('show');
+                return;
+            }
+            
+            resetBtn.innerText = 'Updating...';
+            resetBtn.disabled = true;
+            resetErrorMsg.classList.remove('show');
+            resetSuccessMsg.classList.remove('show');
+            
+            try {
+                const response = await fetch('/api/staff/reset-password-forced', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, staff_id, new_password })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    resetSuccessMsg.innerText = 'Password reset successfully! Redirecting to login...';
+                    resetSuccessMsg.classList.add('show');
+                    setTimeout(() => switchTab('login'), 2000);
+                } else {
+                    resetErrorMsg.innerText = data.message || 'Password reset failed.';
+                    resetErrorMsg.classList.add('show');
+                }
+            } catch (err) {
+                resetErrorMsg.innerText = 'Network error.';
+                resetErrorMsg.classList.add('show');
+            } finally {
+                resetBtn.innerText = 'Update Password';
+                resetBtn.disabled = false;
+            }
+        });
+
+        // Create Profile Logic
+        const createForm = document.getElementById('createForm');
+        const createBtn = document.getElementById('createBtn');
+        const createErrorMsg = document.getElementById('createErrorMsg');
+        const createSuccessMsg = document.getElementById('createSuccessMsg');
+
+        createForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const payload = {
+                action_type: 'CREATE',
+                first_name: document.getElementById('c_firstname').value,
+                surname: document.getElementById('c_surname').value,
+                username: document.getElementById('c_username').value,
+                staff_id: document.getElementById('c_staffid').value,
+                password: document.getElementById('c_password').value,
+                email: document.getElementById('c_email').value,
+                phone_number: document.getElementById('c_phone').value,
+                officer_type: document.getElementById('c_officertype').value,
+                business_unit: document.getElementById('c_bu').value,
+                name_official: `${document.getElementById('c_firstname').value} ${document.getElementById('c_surname').value}`,
+                role: 'User'
+            };
+            
+            createBtn.innerText = 'Submitting...';
+            createBtn.disabled = true;
+            createErrorMsg.classList.remove('show');
+            createSuccessMsg.classList.remove('show');
+
+            try {
+                const response = await fetch('/api/staff/request-profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    createSuccessMsg.innerText = data.message;
+                    createSuccessMsg.classList.add('show');
+                    createForm.reset();
+                } else {
+                    createErrorMsg.innerText = data.message || 'Submission failed.';
+                    createErrorMsg.classList.add('show');
+                }
+            } catch (err) {
+                createErrorMsg.innerText = 'Network error.';
+                createErrorMsg.classList.add('show');
+            } finally {
+                createBtn.innerText = 'Request Profile';
+                createBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

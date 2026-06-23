@@ -1,0 +1,7 @@
+dt_name,account_officer,officer_type,Customer_Count,DT_Total_Customers,Ownership_Percent
+DT001,Officer A,DMO,3,7,42.857142857142854
+DT001,Officer B,Vendor,2,7,28.57142857142857
+DT001,Officer X,DMO,1,7,14.285714285714285
+DT001,Officer Y,Vendor,1,7,14.285714285714285
+DT003,Officer D,Vendor,1,2,50.0
+DT003,Officer E,Vendor,1,2,50.0

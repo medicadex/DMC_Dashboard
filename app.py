@@ -1718,7 +1718,7 @@ def api_performance_rank():
         if session['user']['role'] == 'Vendor':
             vendor_clause = "AND c.account_officer = :vendor_name"
 
-        sql = text(f"""
+        sql = text(rf"""
             SELECT 
                 c.account_officer, 
                 c.business_unit, 
@@ -1726,7 +1726,7 @@ def api_performance_rank():
                 SUM(p.amount_paid) as recovery
             FROM all_payments p
             JOIN customers c ON p.account_number = c.account_number
-            WHERE p.date_of_payment\:\:date BETWEEN :start\:\:date AND :end\:\:date
+            WHERE CAST(p.date_of_payment AS DATE) BETWEEN CAST(:start AS DATE) AND CAST(:end AS DATE)
             {otype_clause}
             {vendor_clause}
             GROUP BY c.account_officer, c.business_unit, c.officer_type
@@ -1838,7 +1838,7 @@ def api_performance_export():
         # Query
         otype_clause = "AND c.officer_type = :otype" if otype != 'Both' else ""
         vendor_clause = "AND c.account_officer = :vendor_name" if session['user']['role'] == 'Vendor' else ""
-        sql = text(f"""
+        sql = text(rf"""
             SELECT 
                 c.account_officer as "Officer Name", 
                 c.business_unit as "Business Unit", 
@@ -1846,7 +1846,7 @@ def api_performance_export():
                 SUM(p.amount_paid) as "Total Recovery"
             FROM all_payments p
             JOIN customers c ON p.account_number = c.account_number
-            WHERE p.date_of_payment\:\:date BETWEEN :start\:\:date AND :end\:\:date
+            WHERE CAST(p.date_of_payment AS DATE) BETWEEN CAST(:start AS DATE) AND CAST(:end AS DATE)
             {otype_clause}
             {vendor_clause}
             GROUP BY c.account_officer, c.business_unit, c.officer_type
@@ -1930,7 +1930,7 @@ def api_payments_preview():
     try:
         # Calculate Grand Totals and Total Rows globally using SQL
         # Using = ANY(:param) which is the most robust way to handle lists in PostgreSQL/psycopg2
-        count_sql = text("""
+        count_sql = text(r"""
             SELECT 
                 COUNT(*) as total_rows,
                 SUM(p.amount_paid) as total_amount
@@ -1939,7 +1939,7 @@ def api_payments_preview():
             WHERE c.business_unit = ANY(:bus)
             AND c.officer_type = ANY(:otypes)
             AND c.account_officer = ANY(:onames)
-            AND p.date_of_payment\:\:date BETWEEN :start\:\:date AND :end\:\:date
+            AND CAST(p.date_of_payment AS DATE) BETWEEN CAST(:start AS DATE) AND CAST(:end AS DATE)
         """)
         
         with engine.connect() as conn:
@@ -1968,7 +1968,7 @@ def api_payments_preview():
             offset = (page - 1) * per_page
             limit_clause = f" LIMIT {per_page} OFFSET {offset}"
 
-        sql = text(f"""
+        sql = text(rf"""
             SELECT 
                 p.date_of_payment, 
                 p.account_number, 
@@ -1991,7 +1991,7 @@ def api_payments_preview():
             WHERE c.business_unit = ANY(:bus)
             AND c.officer_type = ANY(:otypes)
             AND c.account_officer = ANY(:onames)
-            AND p.date_of_payment\:\:date BETWEEN :start\:\:date AND :end\:\:date
+            AND CAST(p.date_of_payment AS DATE) BETWEEN CAST(:start AS DATE) AND CAST(:end AS DATE)
             ORDER BY p.date_of_payment DESC
             {limit_clause}
         """)
@@ -2046,8 +2046,8 @@ def api_payments_export():
         return jsonify({"error": "Missing filters"}), 400
 
     try:
-        # Simplified SQL: Using the same views as the preview for consistency and performance
-        sql = text("""
+        # Optimized SQL: Using LATERAL join for other_payments instead of correlated subquery
+        sql = text(r"""
             SELECT 
                 p.account_number as "Account Number", 
                 c.account_name as "Account Name", 
@@ -2060,17 +2060,23 @@ def api_payments_export():
                 p.date_of_payment as "Date of Payment", 
                 COALESCE(afs.total_discounts, 0) as "Total Discount", 
                 COALESCE(afs.total_adjustments, 0) as "Total Adjustment", 
-                (SELECT SUM(amount_paid) FROM other_payments WHERE account_number = p.account_number AND date_of_payment\:\:date BETWEEN :start\:\:date AND :end\:\:date) as "Other Payment",
+                COALESCE(op.sum_other_payments, 0) as "Other Payment",
                 COALESCE(afs.outstanding_balance, 0) as "Outstanding Balance",
                 COALESCE(afs.payment_plan, 'No') as "Payment Plan (Yes/No)",
                 c.account_officer as "Account Officer"
             FROM all_payments p
             JOIN customers c ON p.account_number = c.account_number
             LEFT JOIN account_financial_summary afs ON p.account_number = afs.account_number
+            LEFT JOIN LATERAL (
+                SELECT SUM(amount_paid) as sum_other_payments 
+                FROM other_payments 
+                WHERE account_number = p.account_number 
+                AND CAST(date_of_payment AS DATE) BETWEEN CAST(:start AS DATE) AND CAST(:end AS DATE)
+            ) op ON true
             WHERE c.business_unit = ANY(:bus)
             AND c.officer_type = ANY(:otypes)
             AND c.account_officer = ANY(:onames)
-            AND p.date_of_payment\:\:date BETWEEN :start\:\:date AND :end\:\:date
+            AND CAST(p.date_of_payment AS DATE) BETWEEN CAST(:start AS DATE) AND CAST(:end AS DATE)
             ORDER BY p.date_of_payment DESC
         """)
         

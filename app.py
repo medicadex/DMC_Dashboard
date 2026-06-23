@@ -767,18 +767,53 @@ def get_dashboard_stats():
             res_bus = conn.execute(text("SELECT DISTINCT business_unit FROM customers WHERE business_unit IS NOT NULL AND business_unit != '' ORDER BY business_unit ASC")).fetchall()
             all_bus = [r[0] for r in res_bus]
 
+            
             # Summary Cards
+            username = session['user']['username'] if 'user' in session else 'Admin'
+            staff_id = session['user'].get('staff_id', '') if 'user' in session else ''
+            full_name = session['user'].get('full_name', username) if 'user' in session else 'Admin'
+            
+            user_check = conn.execute(text("SELECT COUNT(*) FROM customers WHERE staff_id = :u"), {"u": staff_id}).scalar()
+            is_fallback = (user_check == 0)
+            
             sql_summary = """
                 SELECT 
-                    (SELECT COALESCE(SUM(amount_paid), 0) FROM collections WHERE date_of_payment BETWEEN :mstart AND :mend) as total_recovery,
-                    (SELECT COALESCE(SUM(total_adjustments), 0) FROM account_financial_summary) as total_adjustment,
-                    (SELECT COALESCE(SUM(total_discounts), 0) FROM account_financial_summary) as total_discount
+                    (SELECT COALESCE(SUM(amount_paid), 0) FROM collections) as total_recovery,
+                    (SELECT COUNT(*) FROM customers) as total_customers
             """
-            res_summary = conn.execute(text(sql_summary), {"mstart": month_start, "mend": month_end}).fetchone()
+            res_summary = conn.execute(text(sql_summary)).fetchone()
+            
+            if not is_fallback:
+                dmo_stats = conn.execute(text("""
+                    SELECT 
+                        COALESCE(SUM(col.amount_paid), 0) as dmo_rec,
+                        COUNT(DISTINCT col.account_number) as dmo_resp
+                    FROM collections col
+                    JOIN customers cu ON col.account_number = cu.account_number
+                    WHERE cu.staff_id = :u 
+                    AND col.date_of_payment BETWEEN :mstart AND :mend
+                """), {"u": staff_id, "mstart": month_start, "mend": month_end}).fetchone()
+                dmo_recovery = float(dmo_stats[0]) if dmo_stats else 0.0
+                dmo_response = int(dmo_stats[1]) if dmo_stats else 0
+                dmo_label = f"{full_name} {now.strftime('%B')} Recovery"
+            else:
+                dmo_stats = conn.execute(text("""
+                    SELECT 
+                        COALESCE(SUM(amount_paid), 0) as dmo_rec,
+                        COUNT(DISTINCT account_number) as dmo_resp
+                    FROM collections
+                    WHERE date_of_payment BETWEEN :mstart AND :mend
+                """), {"mstart": month_start, "mend": month_end}).fetchone()
+                dmo_recovery = float(dmo_stats[0]) if dmo_stats else 0.0
+                dmo_response = int(dmo_stats[1]) if dmo_stats else 0
+                dmo_label = "Total Current Month Recovery"
+
             data['summary'] = {
                 'total_recovery': float(res_summary[0]) if res_summary and res_summary[0] else 0.0,
-                'total_adjustment': float(res_summary[1]) if res_summary and res_summary[1] else 0.0,
-                'total_discount': float(res_summary[2]) if res_summary and res_summary[2] else 0.0
+                'total_customers': int(res_summary[1]) if res_summary and res_summary[1] else 0,
+                'dmo_recovery': dmo_recovery,
+                'dmo_response': dmo_response,
+                'dmo_label': dmo_label
             }
 
             # 1. Monthly BU

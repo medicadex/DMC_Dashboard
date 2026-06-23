@@ -149,6 +149,23 @@ class UploadService:
                 lambda row: _generate_transaction_id(row, table_name), axis=1
             )
 
+        conflict_keys = {
+            'customers': 'account_number',
+            'staff': 'staff_id',
+            'performance_config': 'bu_name',
+            'discounts': 'transaction_id',
+            'adjustments': 'transaction_id',
+            'resolutions': 'transaction_id',
+            'collections': 'transaction_id',
+            'other_payments': 'transaction_id',
+            'validation': 'transaction_id',
+            'disconnections': 'transaction_id'
+        }
+        
+        conflict_key = conflict_keys.get(table_name, 'transaction_id')
+        if conflict_key in df_mapped.columns:
+            df_mapped = df_mapped.drop_duplicates(subset=[conflict_key], keep='last')
+
         staging_table = f"staging_{table_name}_{uuid.uuid4().hex[:8]}"
         total_new = 0
         total_processed = 0

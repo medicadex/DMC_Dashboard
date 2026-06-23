@@ -1,190 +1,395 @@
-{% extends 'base.html' %}
-
-{% block page_title %}Executive Homepage{% endblock %}
-
-{% block content %}
-{% if session.get('user') and session['user']['role'] == 'Vendor' %}
-<!-- VENDOR PORTAL HOMEPAGE BANNER -->
-<div class="card" style="padding: 40px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; min-height: 400px; background: linear-gradient(135deg, rgba(243, 44, 145, 0.05) 0%, rgba(30, 41, 59, 0.7) 100%); border-left: 5px solid var(--primary-color); box-shadow: 0 8px 30px rgba(0,0,0,0.15); border-radius: 12px; margin-top: 20px;">
-    <div class="welcome-icon" style="width: 80px; height: 80px; border-radius: 50%; background: rgba(243, 44, 145, 0.05); border: 2px dashed var(--primary-color); display: flex; align-items: center; justify-content: center; font-size: 35px; color: var(--primary-color); animation: pulse-glow 2s infinite;">
-        <i class="fas fa-handshake"></i>
-    </div>
-    <div style="max-width: 600px;">
-        <h2 style="margin: 0 0 10px 0; font-size: 24px; color: var(--text-color); font-weight: 700;">
-            <span id="vendor-greeting">Welcome</span>, <span style="color: var(--primary-color);">{{ session['user']['full_name'] }}</span>!
-        </h2>
-        <h3 style="margin: 0 0 20px 0; font-size: 16px; color: var(--text-muted); font-weight: 500;">
-            Welcome to the Ikeja Electric Debt Management and Control Suite.
-        </h3>
-        <p style="margin: 0 0 30px 0; font-size: 14.5px; color: var(--text-color); line-height: 1.6; opacity: 0.9;">
-            Please use the navigation tabs on the left side to view your customer listing, monitor your collections performance, review historical payments, and search for specific account details using the Account Lookup tool.
-        </p>
-        <div style="border-top: 1px solid var(--border-color); padding-top: 20px; font-size: 13px; color: var(--text-muted); font-weight: 600;">
-            Thank you.
+{% extends "base.html" %}
+{% block title %}Executive Homepage
+<!-- WEEKLY PERFORMANCE MODAL -->
+<div id="weekly-modal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 9999; padding: 20px;">
+    <div class="card" style="padding: 30px; width: 100%; max-width: 1200px; max-height: 90vh; overflow-y: auto; background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0; color: var(--primary-color);">Weekly Performance</h3>
+            <div style="display: flex; gap: 10px;">
+                <select id="modalFilterMonth" class="form-control" style="width: auto; padding: 0.5rem; border-radius: 6px;">
+                    <option value="">Current Month</option>
+                    <option value="1">Jan</option><option value="2">Feb</option><option value="3">Mar</option>
+                    <option value="4">Apr</option><option value="5">May</option><option value="6">Jun</option>
+                    <option value="7">Jul</option><option value="8">Aug</option><option value="9">Sep</option>
+                    <option value="10">Oct</option><option value="11">Nov</option><option value="12">Dec</option>
+                </select>
+                <select id="modalFilterYear" class="form-control" style="width: auto; padding: 0.5rem; border-radius: 6px;">
+                    <option value="">Current Year</option>
+                    <option value="2024">2024</option>
+                    <option value="2025">2025</option>
+                    <option value="2026">2026</option>
+                </select>
+                <button class="btn-primary" onclick="loadWeeklyStats()" style="padding: 0.5rem 1rem; border-radius: 6px;">Load Data</button>
+                <button type="button" onclick="document.getElementById('weekly-modal').style.display='none'" style="padding: 0.5rem 1rem; border-radius: 6px; background: transparent; border: 1px solid var(--border-color); cursor: pointer;">Close</button>
+            </div>
         </div>
-    </div>
-</div>
-
-<script>
-    const hr = new Date().getHours();
-    let greet = "Welcome";
-    if (hr < 12) greet = "Good Morning";
-    else if (hr < 17) greet = "Good Afternoon";
-    else greet = "Good Evening";
-    const greetEl = document.getElementById('vendor-greeting');
-    if (greetEl) greetEl.innerText = greet;
-</script>
-{% else %}
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
-    <div>
-        <p style="color: var(--text-muted); margin: 0; font-size: 0.95rem;">Real-time performance metrics and recovery trends across all units.</p>
-    </div>
-    <button class="btn-primary" style="width: auto; padding: 0.6rem 1.2rem; background: var(--primary-color); border: none; border-radius: 8px; color: white; font-weight: 600; cursor: pointer; font-size: 0.9rem;" onclick="loadDashboardStats()">🔄 Refresh Metrics</button>
-</div>
-
-<!-- EXECUTIVE METRICS LAYOUT -->
-<style>
-    .dashboard-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.85rem;
-        margin-top: 0.6rem;
-    }
-    .dashboard-table th {
-        text-align: left;
-        color: var(--text-muted);
-        border-bottom: 1px solid var(--border-color);
-        padding: 0.5rem 0.3rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        font-size: 0.7rem;
-        letter-spacing: 0.05em;
-    }
-    .dashboard-table td {
-        padding: 0.6rem 0.3rem;
-        border-bottom: 1px solid var(--border-color);
-    }
-    .bu-column {
-        width: 10rem;
-        font-weight: 600;
-        color: var(--text-color);
-    }
-    .amount-column {
-        text-align: right;
-        font-family: 'JetBrains Mono', monospace;
-        font-weight: 700;
-        color: var(--primary-color);
-        white-space: nowrap;        /* ← keeps ₦ and digits on one line */
-        font-size: 0.82rem;         /* ← slightly smaller to fit narrow columns */
-    }
-    .cur {
-        font-size: 0.72rem;         /* ₦ symbol smaller than the number */
-        vertical-align: baseline;
-        margin-right: 1px;
-        opacity: 0.85;
-    }
-    
-    /* Fluid headers for cards */
-    .card-title {
-        margin-top: 0;
-        color: var(--primary-color);
-        border-bottom: 2px solid var(--border-color);
-        padding-bottom: 0.5rem;
-        font-size: clamp(0.85rem, 0.2vw + 0.8rem, 1.1rem);
-        font-weight: 700;
-    }
-    
-    /* Bordered Table for Weekly Breakdown */
-    .dashboard-table-bordered th,
-    .dashboard-table-bordered td {
-        border: 1px solid var(--border-color) !important;
-    }
-    .dashboard-table-bordered {
-        border: 1px solid var(--border-color);
-    }
-</style>
-
-<div class="dashboard-grid" style="display: grid; grid-template-columns: 1fr 1.5fr 1fr; gap: 20px; margin-bottom: 25px;">
-    <!-- Daily Table -->
-    <div class="card" style="padding: 1rem;">
-        <h3 class="card-title">📅 Daily Recovery (Today)</h3>
-        <table class="dashboard-table">
-            <thead>
-                <tr>
-                    <th class="bu-column">Business Unit</th>
-                    <th style="text-align: right;">Amount (₦)</th>
-                </tr>
-            </thead>
-            <tbody id="tbl-daily"><tr><td colspan="2" style="text-align:center; padding:10px;">Loading...</td></tr></tbody>
-            <tfoot id="foot-daily" style="border-top: 2px solid var(--border-color); font-weight: 800;"></tfoot>
-        </table>
-    </div>
-
-    <!-- Weekly Table -->
-    <div class="card" style="padding: 1rem;">
-        <h3 class="card-title">📆 Weekly Performance Breakdown</h3>
+        
         <div style="overflow-x: auto;">
-            <table class="dashboard-table dashboard-table-bordered" style="min-width: 450px;">
+            <table class="table" style="width: 100%; text-align: left; border-collapse: collapse;">
                 <thead>
-                    <tr>
-                        <th class="bu-column">Business Unit</th>
-                        <!-- Weeks will be injected here -->
+                    <tr style="border-bottom: 2px solid var(--border-color); color: var(--text-muted); font-size: 13px;">
+                        <th style="padding: 10px 5px;">Business Unit</th>
+                        <th style="padding: 10px 5px; text-align: right;">Week 1</th>
+                        <th style="padding: 10px 5px; text-align: right;">Week 2</th>
+                        <th style="padding: 10px 5px; text-align: right;">Week 3</th>
+                        <th style="padding: 10px 5px; text-align: right;">Week 4</th>
+                        <th style="padding: 10px 5px; text-align: right;">Week 5+</th>
+                        <th style="padding: 10px 5px; text-align: right; color: var(--primary-color);">Grand Total</th>
                     </tr>
                 </thead>
-                <tbody id="tbl-weekly"><tr><td colspan="10" style="text-align:center; padding:10px;">Loading...</td></tr></tbody>
-                <tfoot id="foot-weekly" style="border-top: 2px solid var(--border-color); font-weight: 800;"></tfoot>
+                <tbody id="tbl-modal-weekly-recovery">
+                    <tr><td colspan="7" style="text-align: center; padding: 20px;">Load data to see weekly performance...</td></tr>
+                </tbody>
             </table>
         </div>
     </div>
+</div>
 
-    <!-- Monthly Table -->
-    <div class="card" style="padding: 1rem;">
-        <h3 class="card-title">📊 Monthly Recovery</h3>
-        <table class="dashboard-table">
-            <thead>
-                <tr>
-                    <th class="bu-column">Business Unit</th>
-                    <th style="text-align: right;">Amount (₦)</th>
-                </tr>
-            </thead>
-            <tbody id="tbl-monthly"><tr><td colspan="2" style="text-align:center; padding:10px;">Loading...</td></tr></tbody>
-            <tfoot id="foot-monthly" style="border-top: 2px solid var(--border-color); font-weight: 800;"></tfoot>
-        </table>
+{% endblock %}
+{% block page_title %}Executive Homepage
+<!-- WEEKLY PERFORMANCE MODAL -->
+<div id="weekly-modal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 9999; padding: 20px;">
+    <div class="card" style="padding: 30px; width: 100%; max-width: 1200px; max-height: 90vh; overflow-y: auto; background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0; color: var(--primary-color);">Weekly Performance</h3>
+            <div style="display: flex; gap: 10px;">
+                <select id="modalFilterMonth" class="form-control" style="width: auto; padding: 0.5rem; border-radius: 6px;">
+                    <option value="">Current Month</option>
+                    <option value="1">Jan</option><option value="2">Feb</option><option value="3">Mar</option>
+                    <option value="4">Apr</option><option value="5">May</option><option value="6">Jun</option>
+                    <option value="7">Jul</option><option value="8">Aug</option><option value="9">Sep</option>
+                    <option value="10">Oct</option><option value="11">Nov</option><option value="12">Dec</option>
+                </select>
+                <select id="modalFilterYear" class="form-control" style="width: auto; padding: 0.5rem; border-radius: 6px;">
+                    <option value="">Current Year</option>
+                    <option value="2024">2024</option>
+                    <option value="2025">2025</option>
+                    <option value="2026">2026</option>
+                </select>
+                <button class="btn-primary" onclick="loadWeeklyStats()" style="padding: 0.5rem 1rem; border-radius: 6px;">Load Data</button>
+                <button type="button" onclick="document.getElementById('weekly-modal').style.display='none'" style="padding: 0.5rem 1rem; border-radius: 6px; background: transparent; border: 1px solid var(--border-color); cursor: pointer;">Close</button>
+            </div>
+        </div>
+        
+        <div style="overflow-x: auto;">
+            <table class="table" style="width: 100%; text-align: left; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 2px solid var(--border-color); color: var(--text-muted); font-size: 13px;">
+                        <th style="padding: 10px 5px;">Business Unit</th>
+                        <th style="padding: 10px 5px; text-align: right;">Week 1</th>
+                        <th style="padding: 10px 5px; text-align: right;">Week 2</th>
+                        <th style="padding: 10px 5px; text-align: right;">Week 3</th>
+                        <th style="padding: 10px 5px; text-align: right;">Week 4</th>
+                        <th style="padding: 10px 5px; text-align: right;">Week 5+</th>
+                        <th style="padding: 10px 5px; text-align: right; color: var(--primary-color);">Grand Total</th>
+                    </tr>
+                </thead>
+                <tbody id="tbl-modal-weekly-recovery">
+                    <tr><td colspan="7" style="text-align: center; padding: 20px;">Load data to see weekly performance...</td></tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
-<!-- TOP/BOTTOM OFFICERS ROW -->
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
-    <!-- Top 5 Officers -->
-    <div class="card" style="padding: 1rem;">
-        <h3 class="card-title" style="color: var(--success-color); text-align: center;">🏆 Top 5 Officers (Monthly)</h3>
-        <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 10px;">
-            <thead>
-                <tr style="text-align: left; color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
-                    <th style="padding: 5px;">Officer</th>
-                    <th style="padding: 5px;">BU</th>
-                    <th style="padding: 5px; text-align: right;">Amount (₦)</th>
-                </tr>
-            </thead>
-            <tbody id="tbl-top-officers"><tr><td colspan="3" style="text-align:center; padding:10px;">Loading...</td></tr></tbody>
-        </table>
+{% endblock %}
+
+{% block content %}
+{% if session['user']['role'] == 'Vendor' %}
+<!-- VENDOR VIEW -->
+<div class="card" style="padding: 2rem; text-align: center;">
+    <h2 style="color: var(--primary-color);">Welcome to your Vendor Dashboard</h2>
+    <p style="color: var(--text-muted);">Please navigate to the specific tools from the sidebar.</p>
+</div>
+{% else %}
+<div class="dashboard-wrapper">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <p style="color: var(--text-muted); margin: 0; font-size: 0.95rem;">Real-time performance metrics and recovery trends across all units.</p>
+        </div>
+        
+        <button class="btn-primary" style="width: auto; padding: 0.6rem 1.2rem; background: var(--primary-color); border: none; border-radius: 8px; color: white; font-weight: 600; cursor: pointer; font-size: 0.9rem;" onclick="loadDashboardStats()">🔄 Refresh Metrics</button>
+
     </div>
-    
-    <!-- Bottom 5 Officers -->
-    <div class="card" style="padding: 1rem;">
-        <h3 class="card-title" style="color: var(--danger-color); text-align: center;">📉 Bottom 5 Officers (Monthly)</h3>
-        <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 10px;">
-            <thead>
-                <tr style="text-align: left; color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
-                    <th style="padding: 5px;">Officer</th>
-                    <th style="padding: 5px;">BU</th>
-                    <th style="padding: 5px; text-align: right;">Amount (₦)</th>
-                </tr>
-            </thead>
-            <tbody id="tbl-bottom-officers"><tr><td colspan="3" style="text-align:center; padding:10px;">Loading...</td></tr></tbody>
-        </table>
+
+    <!-- EXECUTIVE METRICS LAYOUT -->
+    <style>
+        .dashboard-header-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--text-color);
+            margin-bottom: 15px;
+        }
+        .section-subtitle {
+            font-size: 16px;
+            font-weight: 500;
+            color: #ef4444; 
+            margin-bottom: 15px;
+        }
+        
+        .summary-cards-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0;
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            border: 1px solid var(--border-color);
+        }
+        .summary-card {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding: 0 25px;
+            position: relative;
+        }
+        .summary-card:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 10%;
+            bottom: 10%;
+            width: 1px;
+            background-color: var(--border-color);
+        }
+        .summary-icon-wrapper {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: 2px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: var(--text-muted);
+            background: var(--card-bg);
+            position: relative;
+        }
+        .summary-icon-badge {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 16px;
+            height: 16px;
+            background: #ef4444;
+            color: white;
+            border-radius: 50%;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid var(--card-bg);
+        }
+        .summary-info {
+            display: flex;
+            flex-direction: column;
+        }
+        .summary-label {
+            font-size: 13px;
+            color: var(--text-muted);
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        .summary-value {
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--text-color);
+            font-family: 'Inter', sans-serif;
+        }
+
+        .tables-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+        
+        .table-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            border: 1px solid var(--border-color);
+            position: relative;
+        }
+        
+        .table-card-badge {
+            display: inline-block;
+            background: #ef4444;
+            color: white;
+            font-weight: 700;
+            font-size: 12px;
+            padding: 6px 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        
+        .calendar-icon {
+            position: absolute;
+            top: 25px;
+            right: 25px;
+            color: var(--text-muted);
+            opacity: 0.3;
+            font-size: 24px;
+        }
+        
+        .clean-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .clean-table th { display: none; }
+        .clean-table td {
+            padding: 12px 5px;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 600;
+        }
+        .clean-table tr:last-child td { border-bottom: none; }
+        
+        .col-bu {
+            color: var(--text-color);
+            text-transform: uppercase;
+            width: 30%;
+        }
+        .col-amount {
+            color: var(--text-color);
+            text-align: right;
+            font-family: 'Inter', monospace;
+        }
+        .col-count {
+            color: var(--text-muted);
+            text-align: right;
+            font-weight: 500;
+        }
+        .row-total { background: rgba(239, 68, 68, 0.05); }
+        .row-total td {
+            color: #ef4444;
+            font-weight: 800;
+            padding-top: 15px;
+            padding-bottom: 15px;
+        }
+        
+        @media (max-width: 900px) {
+            .summary-cards-container { grid-template-columns: 1fr; gap: 15px; }
+            .summary-card:not(:last-child)::after { display: none; }
+            .tables-container { grid-template-columns: 1fr; }
+            .officers-container { grid-template-columns: 1fr !important; }
+        }
+    </style>
+
+    <div class="dashboard-header-title">Dashboard</div>
+
+    <!-- Customer Debt Summary -->
+    <div class="section-subtitle">Customer Debt Summary</div>
+    <div class="summary-cards-container">
+        <!-- Card 1 -->
+        <div class="summary-card">
+            <div class="summary-icon-wrapper">
+                <i class="far fa-address-card"></i>
+                <div class="summary-icon-badge" style="background:#ef4444;"><i class="fas fa-times"></i></div>
+            </div>
+            <div class="summary-info">
+                <span class="summary-label">Total Recovery</span>
+                <span class="summary-value" id="val-total-recovery">₦ 0.00</span>
+            </div>
+        </div>
+        
+        <!-- Card 2 -->
+        <div class="summary-card">
+            <div class="summary-icon-wrapper">
+                <i class="far fa-user-circle"></i>
+                <div class="summary-icon-badge" style="background:#ef4444;"><i class="fas fa-check"></i></div>
+            </div>
+            <div class="summary-info">
+                <span class="summary-label">Total Adjustment (valid)</span>
+                <span class="summary-value" id="val-total-adjustment">₦ 0.00</span>
+            </div>
+        </div>
+        
+        <!-- Card 3 -->
+        <div class="summary-card">
+            <div class="summary-icon-wrapper">
+                <i class="far fa-user-circle"></i>
+                <div class="summary-icon-badge" style="background:#ef4444;"><i class="fas fa-check"></i></div>
+            </div>
+            <div class="summary-info">
+                <span class="summary-label">Total Discount (Valid)</span>
+                <span class="summary-value" id="val-total-discount">₦ 0.00</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Debt Payment Summary -->
+    <div class="section-subtitle">Debt Payment Summary</div>
+    <div class="tables-container">
+        
+        <!-- Daily Table -->
+        <div class="table-card">
+            <div class="table-card-badge">DAILY RECOVERY</div>
+            <i class="far fa-calendar-alt calendar-icon"></i>
+            <table class="clean-table">
+                <tbody id="tbl-daily">
+                    <tr><td colspan="3" style="text-align:center; padding:20px; color:var(--text-muted);">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Monthly Table -->
+        <div class="table-card">
+            <div class="table-card-badge">THIS MONTH</div>
+            <i class="far fa-calendar-alt calendar-icon"></i>
+            <table class="clean-table">
+                <tbody id="tbl-monthly">
+                    <tr><td colspan="3" style="text-align:center; padding:20px; color:var(--text-muted);">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        
+    </div>
+
+    <!-- TOP/BOTTOM OFFICERS ROW -->
+    <div class="officers-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
+        <!-- Top 5 Officers -->
+        <div class="card" style="padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+            <h3 style="color: var(--success-color); font-size: 15px; margin-bottom: 15px;"><i class="fas fa-trophy"></i> Top 5 Officers (Monthly)</h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead>
+                    <tr style="text-align: left; color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
+                        <th style="padding: 8px 5px;">Officer</th>
+                        <th style="padding: 8px 5px;">BU</th>
+                        <th style="padding: 8px 5px; text-align: right;">Amount (₦)</th>
+                    </tr>
+                </thead>
+                <tbody id="tbl-top-officers"><tr><td colspan="3" style="text-align:center; padding:10px;">Loading...</td></tr></tbody>
+            </table>
+        </div>
+        
+        <!-- Bottom 5 Officers -->
+        <div class="card" style="padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+            <h3 style="color: #ef4444; font-size: 15px; margin-bottom: 15px;"><i class="fas fa-chart-line" style="transform: scaleY(-1);"></i> Bottom 5 Officers (Monthly)</h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead>
+                    <tr style="text-align: left; color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
+                        <th style="padding: 8px 5px;">Officer</th>
+                        <th style="padding: 8px 5px;">BU</th>
+                        <th style="padding: 8px 5px; text-align: right;">Amount (₦)</th>
+                    </tr>
+                </thead>
+                <tbody id="tbl-bottom-officers"><tr><td colspan="3" style="text-align:center; padding:10px;">Loading...</td></tr></tbody>
+            </table>
+        </div>
     </div>
 </div>
+
+
+    <!-- View Weekly Performance Button -->
+    <div style="text-align: right; margin-bottom: 20px;">
+        <button class="btn-primary" style="padding: 0.6rem 1.2rem; background: var(--primary-color); border: none; border-radius: 8px; color: white; font-weight: 600; cursor: pointer;" onclick="document.getElementById('weekly-modal').style.display='flex'">
+            <i class="fas fa-calendar-week"></i> View Weekly Performance
+        </button>
+    </div>
 
 <script>
 async function loadDashboardStats() {
@@ -194,105 +399,63 @@ async function loadDashboardStats() {
         if(json.success) {
             const data = json.data;
             
-            // Render Standard BU Tables (Daily/Monthly)
-            const renderBUTable = (tbodyId, tfootId, arr) => {
+            const renderBUTable = (tbodyId, arr) => {
                 const tbody = document.getElementById(tbodyId);
-                const tfoot = document.getElementById(tfootId);
+                let totalAmount = 0;
+                let totalResponse = 0;
+                let html = '';
                 
-                let total = 0;
-                tbody.innerHTML = arr.map(r => {
-                    total += r.total;
-                    return `
+                arr.forEach(r => {
+                    totalAmount += r.total;
+                    totalResponse += r.response || 0;
+                    html += `
                         <tr>
-                            <td class="bu-column">${r.bu}</td>
-                            <td class="amount-column"><span class="cur">₦</span>${Number(r.total).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+                            <td class="col-bu">${r.bu}</td>
+                            <td class="col-amount">₦ ${Number(r.total).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0})}</td>
+                            <td class="col-count">${r.response || 0} Customers</td>
                         </tr>
                     `;
-                }).join('');
+                });
                 
-                tfoot.innerHTML = `
-                    <tr style="background: rgba(243, 44, 145, 0.05);">
-                        <td class="bu-column" style="text-transform: uppercase; font-size: 0.7rem; color: var(--primary-color);">TOTAL RECOVERY</td>
-                        <td class="amount-column"><span class="cur">₦</span>${Number(total).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+                html += `
+                    <tr class="row-total">
+                        <td class="col-bu">Overall Total</td>
+                        <td class="col-amount">₦ ${Number(totalAmount).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0})}</td>
+                        <td class="col-count">${totalResponse} Customers</td>
                     </tr>
                 `;
+                
+                tbody.innerHTML = html;
             };
+            
+            if(data.summary) {
+                document.getElementById('val-total-recovery').innerText = '₦ ' + Number(data.summary.total_recovery).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+                document.getElementById('val-total-adjustment').innerText = '₦ ' + Number(data.summary.total_adjustment).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
+                document.getElementById('val-total-discount').innerText = '₦ ' + Number(data.summary.total_discount).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0});
+            }
 
-            // Render Weekly Breakdown Table (Dynamic Columns)
-            const renderWeeklyTable = (breakdown) => {
-                const tbody = document.getElementById('tbl-weekly');
-                const tfoot = document.getElementById('foot-weekly');
-                const thead = tbody.closest('table').querySelector('thead tr');
-                
-                if(!breakdown || breakdown.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:10px; color:var(--text-muted);">No weekly data available</td></tr>';
-                    return;
-                }
-
-                const weeks = breakdown.map(w => w.week_label);
-                
-                // Update Headers
-                thead.innerHTML = `
-                    <th class="bu-column">Business Unit</th>
-                    ${weeks.map(w => `<th style="text-align: right; padding: 8px 5px;">${w}</th>`).join('')}
-                    <th style="text-align: right; padding: 8px 5px;">Total</th>
-                `;
-                
-                const allBus = breakdown[0].stats.map(s => s.bu);
-                let grandTotal = 0;
-                let weekTotals = weeks.reduce((acc, w) => ({...acc, [w]: 0}), {});
-
-                tbody.innerHTML = allBus.map(bu => {
-                    let rowTotal = 0;
-                    const weekCells = breakdown.map(w => {
-                        const buStat = w.stats.find(s => s.bu === bu);
-                        const val = buStat ? buStat.total : 0;
-                        rowTotal += val;
-                        weekTotals[w.week_label] += val;
-                        return `<td class="amount-column" style="color: ${val > 0 ? 'var(--primary-color)' : 'var(--text-muted)'}; font-weight: ${val > 0 ? '700' : '400'}; opacity: ${val > 0 ? '1' : '0.4'}; white-space:nowrap;">${val > 0 ? '<span class="cur">₦</span>' + Number(val).toLocaleString(undefined, {maximumFractionDigits:0}) : '-'}</td>`;
-                    }).join('');
-                    
-                    grandTotal += rowTotal;
-                    return `
-                        <tr>
-                            <td class="bu-column">${bu}</td>
-                            ${weekCells}
-                            <td class="amount-column"><span class="cur">₦</span>${Number(rowTotal).toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+            renderBUTable('tbl-daily', data.daily_bu || []);
+            renderBUTable('tbl-monthly', data.monthly_bu || []);
+            
+            // Render Officers
+            const renderOfficers = (tbodyId, arr) => {
+                const tbody = document.getElementById(tbodyId);
+                let html = '';
+                arr.forEach(r => {
+                    html += `
+                        <tr style="border-bottom: 1px solid var(--border-color);">
+                            <td style="padding: 10px 5px; color: var(--text-color); font-weight: 500;">${r.officer}</td>
+                            <td style="padding: 10px 5px; color: var(--text-muted); font-size: 0.85rem;">${r.bu}</td>
+                            <td style="padding: 10px 5px; text-align: right; color: var(--text-color); font-family: monospace;">₦ ${Number(r.total).toLocaleString()}</td>
                         </tr>
                     `;
-                }).join('');
-                
-                tfoot.innerHTML = `
-                    <tr style="background: rgba(243, 44, 145, 0.05);">
-                        <td class="bu-column" style="text-transform: uppercase; font-size: 0.7rem; color: var(--primary-color);">TOTAL</td>
-                        ${weeks.map(w => `<td class="amount-column"><span class="cur">₦</span>${Number(weekTotals[w]).toLocaleString(undefined, {maximumFractionDigits:0})}</td>`).join('')}
-                        <td class="amount-column"><span class="cur">₦</span>${Number(grandTotal).toLocaleString(undefined, {maximumFractionDigits:0})}</td>
-                    </tr>
-                `;
+                });
+                if(arr.length === 0) html = '<tr><td colspan="3" style="text-align:center; padding:10px;">No data</td></tr>';
+                tbody.innerHTML = html;
             };
             
-            // Render Officer Tables
-            const renderOfficerTable = (tbodyId, arr) => {
-                const tbody = document.getElementById(tbodyId);
-                if(!arr || arr.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:10px; color:var(--text-muted);">No data</td></tr>';
-                    return;
-                }
-                tbody.innerHTML = arr.map(r => `
-                    <tr style="border-bottom: 1px solid var(--border-color);">
-                        <td style="padding: 0.5rem 0.3rem; font-weight: 500;">${r.dmo}</td>
-                        <td style="padding: 0.5rem 0.3rem; color: var(--text-muted); font-size: 0.7rem;">${r.bu}</td>
-                        <td style="padding: 0.5rem 0.3rem; text-align: right; color: var(--primary-color); font-weight: 700; white-space: nowrap;"><span class="cur">₦</span>${Number(r.total).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
-                    </tr>
-                `).join('');
-            };
-            
-            renderBUTable('tbl-daily', 'foot-daily', data.daily_bu);
-            renderWeeklyTable(data.weekly_breakdown);
-            renderBUTable('tbl-monthly', 'foot-monthly', data.monthly_bu);
-            
-            renderOfficerTable('tbl-top-officers', data.top_dmo);
-            renderOfficerTable('tbl-bottom-officers', data.bottom_dmo);
+            if(data.top_dmo) renderOfficers('tbl-top-officers', data.top_dmo);
+            if(data.bottom_dmo) renderOfficers('tbl-bottom-officers', data.bottom_dmo);
         }
     } catch(err) {
         console.error("Error loading homepage stats:", err);
@@ -300,68 +463,142 @@ async function loadDashboardStats() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+    const today = new Date();
+    document.getElementById('modalFilterMonth').value = today.getMonth() + 1;
+    document.getElementById('modalFilterYear').value = today.getFullYear();
     loadDashboardStats();
 });
+
+async function loadWeeklyStats() {
+    const tbody = document.getElementById('tbl-modal-weekly-recovery');
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Loading...</td></tr>';
+    try {
+        const fMonth = document.getElementById('modalFilterMonth').value;
+        const fYear = document.getElementById('modalFilterYear').value;
+        const queryParams = new URLSearchParams();
+        if (fMonth) queryParams.append('month', fMonth);
+        if (fYear) queryParams.append('year', fYear);
+        
+        const res = await fetch(`/api/dashboard-stats?${queryParams.toString()}`);
+        const json = await res.json();
+        
+        if (json.success && json.data.weekly_breakdown) {
+            let html = '';
+            const buData = {};
+            // totals array to keep grand totals per column, and an overall grand total
+            const grandTotals = [{amt:0, res:0}, {amt:0, res:0}, {amt:0, res:0}, {amt:0, res:0}, {amt:0, res:0}];
+            let overallAmt = 0;
+            let overallRes = 0;
+
+            json.data.weekly_breakdown.forEach((wkObj, weekIndex) => {
+                if(weekIndex > 4) weekIndex = 4;
+                wkObj.data.forEach(item => {
+                    if (!buData[item.bu]) buData[item.bu] = [{amt:0, res:0}, {amt:0, res:0}, {amt:0, res:0}, {amt:0, res:0}, {amt:0, res:0}];
+                    buData[item.bu][weekIndex].amt += item.total;
+                    buData[item.bu][weekIndex].res += (item.response || 0);
+                    
+                    grandTotals[weekIndex].amt += item.total;
+                    grandTotals[weekIndex].res += (item.response || 0);
+                    
+                    overallAmt += item.total;
+                    overallRes += (item.response || 0);
+                });
+            });
+            
+            for (const [bu, weeks] of Object.entries(buData)) {
+                html += `<tr style="border-bottom: 1px solid var(--border-color);">
+                    <td style="padding: 10px 5px; color: var(--text-color); font-weight: 600;">${bu}</td>`;
+                
+                let rowAmt = 0;
+                let rowRes = 0;
+                
+                for(let w=0; w<5; w++) {
+                    let amtStr = weeks[w].amt ? weeks[w].amt.toLocaleString(undefined, {minimumFractionDigits: 2}) : '0.00';
+                    let resStr = weeks[w].res ? ` (${weeks[w].res} resp)` : '';
+                    rowAmt += weeks[w].amt;
+                    rowRes += weeks[w].res;
+                    html += `<td style="padding: 10px 5px; text-align: right; font-weight: 600;"><span style="color:var(--text-color);">₦ ${amtStr}</span><br><span style="font-size:11px; color:var(--text-muted);">${resStr}</span></td>`;
+                }
+                
+                // Row level grand total column
+                let rAmtStr = rowAmt.toLocaleString(undefined, {minimumFractionDigits: 2});
+                let rResStr = rowRes ? ` (${rowRes} resp)` : '';
+                html += `<td style="padding: 10px 5px; text-align: right; font-weight: 800; color: var(--primary-color);"><span style="color:var(--primary-color);">₦ ${rAmtStr}</span><br><span style="font-size:11px;">${rResStr}</span></td>`;
+                
+                html += `</tr>`;
+            }
+            
+            // Grand Total Row
+            html += `<tr style="background: rgba(239, 68, 68, 0.05);">
+                <td style="padding: 15px 5px; color: #ef4444; font-weight: 800;">Grand Total</td>`;
+            for(let w=0; w<5; w++) {
+                let amtStr = grandTotals[w].amt.toLocaleString(undefined, {minimumFractionDigits: 2});
+                let resStr = ` (${grandTotals[w].res} resp)`;
+                html += `<td style="padding: 15px 5px; text-align: right; color: #ef4444; font-weight: 800;">₦ ${amtStr}<br><span style="font-size:11px;">${resStr}</span></td>`;
+            }
+            
+            // Overall Grand Total cell
+            let oAmtStr = overallAmt.toLocaleString(undefined, {minimumFractionDigits: 2});
+            let oResStr = ` (${overallRes} resp)`;
+            html += `<td style="padding: 15px 5px; text-align: right; color: var(--primary-color); font-weight: 900; background: rgba(243, 44, 145, 0.05);">₦ ${oAmtStr}<br><span style="font-size:11px;">${oResStr}</span></td>`;
+            
+            html += `</tr>`;
+
+            tbody.innerHTML = html;
+        } else {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Failed to load data</td></tr>';
+        }
+    } catch(err) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Error loading data</td></tr>';
+    }
+}
 </script>
 {% endif %}
 
-{% if require_password_change %}
-<!-- FIRST LOGIN PASSWORD PROMPT MODAL -->
-<div id="welcome-password-modal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 9999;">
-    <div class="card" style="padding: 30px; max-width: 400px; width: 100%; text-align: center; background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
-        <h3 style="margin-bottom: 10px; color: var(--primary-color);">Welcome!</h3>
-        <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 20px;">It looks like you are using the default password. Would you like to change it now?</p>
-        
-        <div class="alert-message alert-error" id="flErrorMsg" style="display: none; padding: 10px; background: rgba(239,68,68,0.1); color: var(--danger-color); border: 1px solid rgba(239,68,68,0.2); border-radius: 8px; font-size: 13px; margin-bottom: 15px;"></div>
-        
-        <form id="firstLoginForm">
-            <input type="hidden" id="fl_current_password" value="{{ session['user']['staff_id'] | lower }}">
-            <div class="form-group" style="text-align: left; margin-bottom: 15px;">
-                <label for="fl_new_password" style="display: block; margin-bottom: 8px; font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">New Password</label>
-                <div style="position: relative;">
-                    <input type="password" id="fl_new_password" class="form-control" required style="width: 100%; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); box-sizing: border-box; outline: none;">
-                </div>
+
+<!-- WEEKLY PERFORMANCE MODAL -->
+<div id="weekly-modal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 9999; padding: 20px;">
+    <div class="card" style="padding: 30px; width: 100%; max-width: 1200px; max-height: 90vh; overflow-y: auto; background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0; color: var(--primary-color);">Weekly Performance</h3>
+            <div style="display: flex; gap: 10px;">
+                <select id="modalFilterMonth" class="form-control" style="width: auto; padding: 0.5rem; border-radius: 6px;">
+                    <option value="">Current Month</option>
+                    <option value="1">Jan</option><option value="2">Feb</option><option value="3">Mar</option>
+                    <option value="4">Apr</option><option value="5">May</option><option value="6">Jun</option>
+                    <option value="7">Jul</option><option value="8">Aug</option><option value="9">Sep</option>
+                    <option value="10">Oct</option><option value="11">Nov</option><option value="12">Dec</option>
+                </select>
+                <select id="modalFilterYear" class="form-control" style="width: auto; padding: 0.5rem; border-radius: 6px;">
+                    <option value="">Current Year</option>
+                    <option value="2024">2024</option>
+                    <option value="2025">2025</option>
+                    <option value="2026">2026</option>
+                </select>
+                <button class="btn-primary" onclick="loadWeeklyStats()" style="padding: 0.5rem 1rem; border-radius: 6px;">Load Data</button>
+                <button type="button" onclick="document.getElementById('weekly-modal').style.display='none'" style="padding: 0.5rem 1rem; border-radius: 6px; background: transparent; border: 1px solid var(--border-color); cursor: pointer;">Close</button>
             </div>
-            <button type="submit" class="btn-primary" id="flBtn" style="width: 100%; padding: 12px; border-radius: 10px; font-weight: 700; margin-bottom: 10px; background: var(--primary-color); color: white; border: none; cursor: pointer; transition: all 0.2s;">Change Password</button>
-            <button type="button" onclick="document.getElementById('welcome-password-modal').style.display='none'" style="width: 100%; padding: 12px; border-radius: 10px; font-weight: 700; background: transparent; color: var(--text-muted); border: 1px solid var(--border-color); cursor: pointer; transition: all 0.2s;">Skip for Now</button>
-        </form>
+        </div>
+        
+        <div style="overflow-x: auto;">
+            <table class="table" style="width: 100%; text-align: left; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 2px solid var(--border-color); color: var(--text-muted); font-size: 13px;">
+                        <th style="padding: 10px 5px;">Business Unit</th>
+                        <th style="padding: 10px 5px; text-align: right;">Week 1</th>
+                        <th style="padding: 10px 5px; text-align: right;">Week 2</th>
+                        <th style="padding: 10px 5px; text-align: right;">Week 3</th>
+                        <th style="padding: 10px 5px; text-align: right;">Week 4</th>
+                        <th style="padding: 10px 5px; text-align: right;">Week 5+</th>
+                        <th style="padding: 10px 5px; text-align: right; color: var(--primary-color);">Grand Total</th>
+                    </tr>
+                </thead>
+                <tbody id="tbl-modal-weekly-recovery">
+                    <tr><td colspan="7" style="text-align: center; padding: 20px;">Load data to see weekly performance...</td></tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
-<script>
-document.getElementById('firstLoginForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const btn = document.getElementById('flBtn');
-    const errorMsg = document.getElementById('flErrorMsg');
-    const current_password = document.getElementById('fl_current_password').value;
-    const new_password = document.getElementById('fl_new_password').value;
-    
-    btn.innerText = 'Updating...';
-    btn.disabled = true;
-    errorMsg.style.display = 'none';
-    
-    try {
-        const res = await fetch('/api/staff/change-password', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ current_password, new_password })
-        });
-        const data = await res.json();
-        if(data.success) {
-            document.getElementById('welcome-password-modal').style.display = 'none';
-            alert('Password changed successfully!');
-        } else {
-            errorMsg.innerText = data.message || 'Update failed.';
-            errorMsg.style.display = 'block';
-        }
-    } catch(err) {
-        errorMsg.innerText = 'Network error.';
-        errorMsg.style.display = 'block';
-    } finally {
-        btn.innerText = 'Change Password';
-        btn.disabled = false;
-    }
-});
-</script>
-{% endif %}
 
 {% endblock %}

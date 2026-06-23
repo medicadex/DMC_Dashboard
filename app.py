@@ -735,90 +735,132 @@ def service_worker():
 @login_required
 def get_dashboard_stats():
     try:
+        import calendar
+        from datetime import datetime
         now = datetime.now()
-        today_start = now.strftime('%Y-%m-%d 00:00:00')
-        month_start = now.strftime('%Y-%m-01 00:00:00')
         
+        req_month = request.args.get('month')
+        req_year = request.args.get('year')
+        
+        if req_month and req_year:
+            try:
+                selected_year = int(req_year)
+                selected_month = int(req_month)
+                month_start = f"{selected_year}-{selected_month:02d}-01 00:00:00"
+                last_day = calendar.monthrange(selected_year, selected_month)[1]
+                month_end = f"{selected_year}-{selected_month:02d}-{last_day} 23:59:59"
+                today_start = f"{selected_year}-{selected_month:02d}-{last_day} 00:00:00"
+                today_end = f"{selected_year}-{selected_month:02d}-{last_day} 23:59:59"
+            except:
+                month_start = now.strftime('%Y-%m-01 00:00:00')
+                month_end = now.strftime('%Y-%m-%d 23:59:59')
+                today_start = now.strftime('%Y-%m-%d 00:00:00')
+                today_end = now.strftime('%Y-%m-%d 23:59:59')
+        else:
+            month_start = now.strftime('%Y-%m-01 00:00:00')
+            month_end = now.strftime('%Y-%m-%d 23:59:59')
+            today_start = now.strftime('%Y-%m-%d 00:00:00')
+            today_end = now.strftime('%Y-%m-%d 23:59:59')
+
         data = {}
         with engine.connect() as conn:
-            # Get all active Business Units first to ensure they all show up
             res_bus = conn.execute(text("SELECT DISTINCT business_unit FROM customers WHERE business_unit IS NOT NULL AND business_unit != '' ORDER BY business_unit ASC")).fetchall()
             all_bus = [r[0] for r in res_bus]
 
-            # 1. Monthly BU (Full list)
+            # Summary Cards
+            sql_summary = """
+                SELECT 
+                    (SELECT COALESCE(SUM(amount_paid), 0) FROM collections WHERE date_of_payment BETWEEN :mstart AND :mend) as total_recovery,
+                    (SELECT COALESCE(SUM(total_adjustments), 0) FROM account_financial_summary) as total_adjustment,
+                    (SELECT COALESCE(SUM(total_discounts), 0) FROM account_financial_summary) as total_discount
+            """
+            res_summary = conn.execute(text(sql_summary), {"mstart": month_start, "mend": month_end}).fetchone()
+            data['summary'] = {
+                'total_recovery': float(res_summary[0]) if res_summary and res_summary[0] else 0.0,
+                'total_adjustment': float(res_summary[1]) if res_summary and res_summary[1] else 0.0,
+                'total_discount': float(res_summary[2]) if res_summary and res_summary[2] else 0.0
+            }
+
+            # 1. Monthly BU
             sql_monthly = """
-                SELECT c.business_unit, SUM(p.amount_paid) as total
-                FROM all_payments p
+                SELECT c.business_unit, SUM(p.amount_paid) as total, COUNT(DISTINCT p.account_number) as response
+                FROM collections p
                 JOIN customers c ON p.account_number = c.account_number
-                WHERE p.date_of_payment >= :mstart
+                WHERE p.date_of_payment BETWEEN :mstart AND :mend
                 GROUP BY c.business_unit
             """
-            res_m = conn.execute(text(sql_monthly), {"mstart": month_start}).fetchall()
-            m_map = {r[0]: float(r[1]) for r in res_m if r[0]}
-            data['monthly_bu'] = [{"bu": bu, "total": m_map.get(bu, 0.0)} for bu in all_bus]
+            res_m = conn.execute(text(sql_monthly), {"mstart": month_start, "mend": month_end}).fetchall()
+            m_map = {r[0]: {"total": float(r[1]), "response": int(r[2])} for r in res_m if r[0]}
+            data['monthly_bu'] = [{"bu": bu, "total": m_map.get(bu, {}).get("total", 0.0), "response": m_map.get(bu, {}).get("response", 0)} for bu in all_bus]
             
-            # 2. Weekly Breakdown for current month
-            # Using Postgres TO_CHAR(..., 'W') for week of month (1-5)
+            # 2. Weekly Breakdown
             sql_weeks = """
                 SELECT 
                     c.business_unit,
                     TO_CHAR(p.date_of_payment, 'W')::integer as week_num,
-                    SUM(p.amount_paid) as total
-                FROM all_payments p
+                    SUM(p.amount_paid) as total,
+                    COUNT(DISTINCT p.account_number) as response
+                FROM collections p
                 JOIN customers c ON p.account_number = c.account_number
-                WHERE p.date_of_payment >= :mstart
+                WHERE p.date_of_payment BETWEEN :mstart AND :mend
                 GROUP BY c.business_unit, week_num
                 ORDER BY week_num ASC
             """
-            res_w = conn.execute(text(sql_weeks), {"mstart": month_start}).fetchall()
+            res_w = conn.execute(text(sql_weeks), {"mstart": month_start, "mend": month_end}).fetchall()
+            weeks_data = {}
+            for r in res_w:
+                bu = r[0]
+                wk = r[1]
+                if wk not in weeks_data:
+                    weeks_data[wk] = {}
+                weeks_data[wk][bu] = {"total": float(r[2]), "response": int(r[3])}
             
-            # Process weeks
-            weeks_present = sorted(list(set(r[1] for r in res_w)))
-            weekly_data = []
-            for w in weeks_present:
-                bu_totals = {r[0]: float(r[2]) for r in res_w if r[1] == w and r[0]}
-                weekly_data.append({
-                    "week_label": f"Week {int(w)}",
-                    "stats": [{"bu": bu, "total": bu_totals.get(bu, 0.0)} for bu in all_bus]
-                })
-            data['weekly_breakdown'] = weekly_data
-            
-            # 3. Daily BU (Full list)
+            weekly_list = []
+            for wk in sorted(weeks_data.keys()):
+                wk_obj = {"week": f"Week {wk}", "data": []}
+                for bu in all_bus:
+                    wk_obj["data"].append({
+                        "bu": bu, 
+                        "total": weeks_data[wk].get(bu, {}).get("total", 0.0),
+                        "response": weeks_data[wk].get(bu, {}).get("response", 0)
+                    })
+                weekly_list.append(wk_obj)
+            data['weekly_breakdown'] = weekly_list
+
+            # 3. Daily BU
             sql_daily = """
-                SELECT c.business_unit, SUM(p.amount_paid) as total
-                FROM all_payments p
+                SELECT c.business_unit, SUM(p.amount_paid) as total, COUNT(DISTINCT p.account_number) as response
+                FROM collections p
                 JOIN customers c ON p.account_number = c.account_number
-                WHERE p.date_of_payment >= :dstart
+                WHERE p.date_of_payment BETWEEN :dstart AND :dend
                 GROUP BY c.business_unit
             """
-            res_d = conn.execute(text(sql_daily), {"dstart": today_start}).fetchall()
-            d_map = {r[0]: float(r[1]) for r in res_d if r[0]}
-            data['daily_bu'] = [{"bu": bu, "total": d_map.get(bu, 0.0)} for bu in all_bus]
-            
-            # 4. Top/Bottom Officers Monthly (Cleaned of 'Unknown')
+            res_d = conn.execute(text(sql_daily), {"dstart": today_start, "dend": today_end}).fetchall()
+            d_map = {r[0]: {"total": float(r[1]), "response": int(r[2])} for r in res_d if r[0]}
+            data['daily_bu'] = [{"bu": bu, "total": d_map.get(bu, {}).get("total", 0.0), "response": d_map.get(bu, {}).get("response", 0)} for bu in all_bus]
+
+            # 4. Top/Bottom Officers
             sql_dmo = """
                 SELECT c.account_officer as officer, 
                        c.business_unit as bu,
                        SUM(p.amount_paid) as total
-                FROM all_payments p
+                FROM collections p
                 JOIN customers c ON p.account_number = c.account_number
-                WHERE p.date_of_payment >= :mstart
+                WHERE p.date_of_payment BETWEEN :mstart AND :mend
                   AND c.business_unit IS NOT NULL AND c.business_unit != ''
                   AND c.account_officer IS NOT NULL AND c.account_officer != ''
                 GROUP BY c.account_officer, c.business_unit 
-                HAVING SUM(p.amount_paid) > 0 
                 ORDER BY total DESC
             """
-            res_dmo = conn.execute(text(sql_dmo), {"mstart": month_start}).fetchall()
-            dmo_list = [{"dmo": r[0], "bu": r[1], "total": float(r[2])} for r in res_dmo]
+            res_dmo = conn.execute(text(sql_dmo), {"mstart": month_start, "mend": month_end}).fetchall()
+            data['top_dmo'] = [dict(r._mapping) for r in res_dmo[:5]]
+            data['bottom_dmo'] = [dict(r._mapping) for r in res_dmo[-5:] if r.total > 0]
             
-            data['top_dmo'] = dmo_list[:5]
-            data['bottom_dmo'] = dmo_list[-5:][::-1] if len(dmo_list) >= 5 else dmo_list[::-1]
-            
-        return jsonify({'success': True, 'data': data})
+        return jsonify({"success": True, "data": data})
     except Exception as e:
-        logger.error(f"Dashboard stats error: {e}", exc_info=True)
-        return jsonify({'success': False, 'message': 'An internal error occurred while retrieving dashboard statistics.'}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route('/api/autocomplete')
 @login_required

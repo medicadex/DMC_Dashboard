@@ -35,7 +35,7 @@ from utils.security import SessionManager
 from db_utils import get_db_engine
 
 app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY', os.urandom(24))
+app.secret_key = os.getenv('SECRET_KEY', 'default-static-secret-key-for-dmc-web-project-12345')
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 

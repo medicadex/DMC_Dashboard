@@ -6,14 +6,17 @@ import io
 import math
 import traceback
 import logging
+import csv
+import tempfile
 from functools import wraps
 from datetime import datetime, timedelta
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, send_file, session, make_response, Response
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, send_file, session, make_response, Response, stream_with_context, after_this_request
 from werkzeug.utils import secure_filename
 from sqlalchemy import text
 import pandas as pd
 import numpy as np
+from openpyxl import Workbook
 from supabase import create_client, Client
 
 from db_utils import get_db_engine
@@ -39,6 +42,76 @@ app.secret_key = os.getenv('SECRET_KEY', 'default-static-secret-key-for-dmc-web-
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
+# Set default export format - can be 'csv' or 'xlsx' (configured via environment variable)
+DEFAULT_EXPORT_FORMAT = os.getenv('DEFAULT_EXPORT_FORMAT', 'xlsx').lower()
+
+def generate_csv_stream(sql, params, headers):
+    """
+    Generator function to stream CSV rows chunk-by-chunk.
+    Yields data directly to the Flask response.
+    """
+    def generate():
+        # Yield UTF-8 BOM for Excel compatibility
+        yield '\ufeff'
+        
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write headers
+        writer.writerow(headers)
+        yield output.getvalue()
+        output.seek(0)
+        output.truncate(0)
+        
+        with get_db_engine().connect() as conn:
+            result = conn.execution_options(stream_results=True).execute(text(sql) if isinstance(sql, str) else sql, params)
+            while True:
+                chunk = result.fetchmany(1000)
+                if not chunk:
+                    break
+                for row in chunk:
+                    # Convert datetimes to strings if necessary
+                    processed_row = [
+                        v.strftime('%Y-%m-%d %H:%M:%S') if isinstance(v, datetime) else v
+                        for v in row
+                    ]
+                    writer.writerow(processed_row)
+                yield output.getvalue()
+                output.seek(0)
+                output.truncate(0)
+                
+    return Response(stream_with_context(generate()), mimetype='text/csv')
+
+def generate_excel_tempfile(sql, params, headers, sheet_name='Data'):
+    """
+    Writes data to a temporary Excel file in chunks using openpyxl write_only mode
+    to minimize memory usage.
+    """
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet(title=sheet_name)
+    ws.append(headers)
+    
+    with get_db_engine().connect() as conn:
+        result = conn.execution_options(stream_results=True).execute(text(sql) if isinstance(sql, str) else sql, params)
+        while True:
+            chunk = result.fetchmany(1000)
+            if not chunk:
+                break
+            for row in chunk:
+                # Openpyxl handles datetimes, but we ensure no timezone issues
+                processed_row = [
+                    v.replace(tzinfo=None) if isinstance(v, datetime) else v 
+                    for v in row
+                ]
+                ws.append(processed_row)
+                
+    # Create temp file
+    fd, path = tempfile.mkstemp(suffix='.xlsx')
+    os.close(fd)
+    wb.save(path)
+    wb.close()
+    return path
+
 def generate_descriptive_filename(base_name, filters):
     """
     Generates a descriptive filename based on applied filters to exactly match main_app.py nomenclature.
@@ -52,7 +125,7 @@ def generate_descriptive_filename(base_name, filters):
             if len(otype) == 1:
                 off_type = str(otype[0])
             elif len(otype) > 1:
-                off_type = "Mixed_Types"
+                off_type = "All"
         else:
             if str(otype) != 'Both':
                 off_type = str(otype)
@@ -78,10 +151,101 @@ def generate_descriptive_filename(base_name, filters):
         
     return secure_filename(f"{filename}.xlsx")
 
+def create_export_buffer(df, filename_base, sheet_name='Data', format_type='xlsx'):
+    """Creates an in-memory buffer with the dataframe exported to Excel or CSV."""
+    import io
+    buffer = io.BytesIO()
+    
+    if format_type == 'csv':
+        df.to_csv(buffer, index=False, encoding='utf-8-sig')
+        filename = f"{filename_base}.csv"
+        mimetype = 'text/csv'
+    else:
+        # Excel with xlsxwriter for better performance
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+        filename = f"{filename_base}.xlsx"
+        mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    
+    buffer.seek(0)
+    return buffer, filename, mimetype
+
 # ────────────────────────────────────────────────
 # CONFIG
 # ────────────────────────────────────────────────
 engine = get_db_engine()
+
+# Initialize necessary database views
+def initialize_database_views():
+    """Creates or replaces necessary database views (all_payments, account_financial_summary)."""
+    try:
+        with engine.begin() as conn:
+            # Create all_payments view: union of collections and other_payments
+            conn.execute(text("""
+                CREATE OR REPLACE VIEW all_payments AS
+                SELECT 
+                    account_number,
+                    amount_paid,
+                    date_of_payment,
+                    transaction_id,
+                    'collections' as payment_source
+                FROM collections
+                UNION ALL
+                SELECT 
+                    account_number,
+                    amount_paid,
+                    date_of_payment,
+                    transaction_id,
+                    'other_payments' as payment_source
+                FROM other_payments
+            """))
+            
+            # Create account_financial_summary view
+            conn.execute(text("""
+                CREATE OR REPLACE VIEW account_financial_summary AS
+                SELECT 
+                    c.account_number,
+                    c.closing_balance as total_debt,
+                    COALESCE(p.total_payments, 0) as total_payments,
+                    COALESCE(d.total_discounts, 0) as total_discounts,
+                    COALESCE(a.total_adjustments, 0) as total_adjustments,
+                    (c.closing_balance - COALESCE(p.total_payments, 0) - COALESCE(d.total_discounts, 0) - COALESCE(a.total_adjustments, 0)) as outstanding_balance,
+                    CASE 
+                        WHEN (COALESCE(p.total_payments, 0) >= 0.3 * c.closing_balance) 
+                        AND (c.closing_balance - COALESCE(p.total_payments, 0) - COALESCE(d.total_discounts, 0) - COALESCE(a.total_adjustments, 0) > 0) 
+                        THEN 'Yes' 
+                        ELSE 'No' 
+                    END as payment_plan
+                FROM customers c
+                LEFT JOIN (
+                    SELECT account_number, SUM(amount_paid) as total_payments
+                    FROM all_payments
+                    GROUP BY account_number
+                ) p ON c.account_number = p.account_number
+                LEFT JOIN (
+                    SELECT account_number, SUM(discounted_amount) as total_discounts
+                    FROM discounts
+                    WHERE LOWER(status) = 'approved' 
+                    OR LOWER(user_who_approved) LIKE '%okoye%' 
+                    OR LOWER(user_who_approved) LIKE '%forstinus%'
+                    GROUP BY account_number
+                ) d ON c.account_number = d.account_number
+                LEFT JOIN (
+                    SELECT account_number, SUM(adjustment_amount) as total_adjustments
+                    FROM adjustments
+                    WHERE LOWER(status) = 'approved' 
+                    OR LOWER(user_who_approved_adjustment) LIKE '%okoye%' 
+                    OR LOWER(user_who_approved_adjustment) LIKE '%forstinus%'
+                    GROUP BY account_number
+                ) a ON c.account_number = a.account_number
+            """))
+            
+            logger.info("Successfully initialized database views (all_payments, account_financial_summary)")
+    except Exception as e:
+        logger.error(f"Error initializing database views: {e}", exc_info=True)
+
+# Call the function to initialize views when app starts
+initialize_database_views()
 
 # Supabase Auth Client
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -739,8 +903,9 @@ def get_dashboard_stats():
         from datetime import datetime
         now = datetime.now()
         
-        req_month = request.args.get('month')
-        req_year = request.args.get('year')
+        req_month = request.values.get('month')
+        req_year = request.values.get('year')
+        request_type = request.values.get('type', 'all')  # 'all' for default, 'weekly' for only weekly
         
         if req_month and req_year:
             try:
@@ -764,132 +929,136 @@ def get_dashboard_stats():
 
         data = {}
         with engine.connect() as conn:
-            res_bus = conn.execute(text("SELECT DISTINCT business_unit FROM customers WHERE business_unit IS NOT NULL AND business_unit != '' ORDER BY business_unit ASC")).fetchall()
-            all_bus = [r[0] for r in res_bus]
-
-            
-            # Summary Cards
-            username = session['user']['username'] if 'user' in session else 'Admin'
-            staff_id = session['user'].get('staff_id', '') if 'user' in session else ''
-            full_name = session['user'].get('full_name', username) if 'user' in session else 'Admin'
-            
-            user_check = conn.execute(text("SELECT COUNT(*) FROM customers WHERE staff_id = :u"), {"u": staff_id}).scalar()
-            is_fallback = (user_check == 0)
-            
-            sql_summary = """
-                SELECT 
-                    (SELECT COALESCE(SUM(amount_paid), 0) FROM collections) as total_recovery,
-                    (SELECT COUNT(*) FROM customers) as total_customers
-            """
-            res_summary = conn.execute(text(sql_summary)).fetchone()
-            
-            if not is_fallback:
-                dmo_stats = conn.execute(text("""
+            if request_type == 'weekly':
+                # Only load weekly data for the modal
+                res_bus = conn.execute(text("SELECT DISTINCT business_unit FROM customers WHERE business_unit IS NOT NULL AND business_unit != '' ORDER BY business_unit ASC")).fetchall()
+                all_bus = [r[0] for r in res_bus]
+                
+                sql_weeks = """
                     SELECT 
-                        COALESCE(SUM(col.amount_paid), 0) as dmo_rec,
-                        COUNT(DISTINCT col.account_number) as dmo_resp
-                    FROM collections col
-                    JOIN customers cu ON col.account_number = cu.account_number
-                    WHERE cu.staff_id = :u 
-                    AND col.date_of_payment BETWEEN :mstart AND :mend
-                """), {"u": staff_id, "mstart": month_start, "mend": month_end}).fetchone()
-                dmo_recovery = float(dmo_stats[0]) if dmo_stats else 0.0
-                dmo_response = int(dmo_stats[1]) if dmo_stats else 0
-                dmo_label = f"{full_name} {now.strftime('%B')} Recovery"
+                        c.business_unit,
+                        TO_CHAR(p.date_of_payment, 'W')::integer as week_num,
+                        SUM(p.amount_paid) as total,
+                        COUNT(DISTINCT p.account_number) as response
+                    FROM collections p
+                    JOIN customers c ON p.account_number = c.account_number
+                    WHERE p.date_of_payment BETWEEN :mstart AND :mend
+                    GROUP BY c.business_unit, week_num
+                    ORDER BY week_num ASC
+                """
+                res_w = conn.execute(text(sql_weeks), {"mstart": month_start, "mend": month_end}).fetchall()
+                weeks_data = {}
+                for r in res_w:
+                    bu = r[0]
+                    wk = r[1]
+                    if wk not in weeks_data:
+                        weeks_data[wk] = {}
+                    weeks_data[wk][bu] = {"total": float(r[2]), "response": int(r[3])}
+                
+                weekly_list = []
+                for wk in sorted(weeks_data.keys()):
+                    wk_obj = {"week": f"Week {wk}", "data": []}
+                    for bu in all_bus:
+                        wk_obj["data"].append({
+                            "bu": bu, 
+                            "total": weeks_data[wk].get(bu, {}).get("total", 0.0),
+                            "response": weeks_data[wk].get(bu, {}).get("response", 0)
+                        })
+                    weekly_list.append(wk_obj)
+                data['weekly_breakdown'] = weekly_list
             else:
-                dmo_stats = conn.execute(text("""
+                # Load all data for the homepage
+                res_bus = conn.execute(text("SELECT DISTINCT business_unit FROM customers WHERE business_unit IS NOT NULL AND business_unit != '' ORDER BY business_unit ASC")).fetchall()
+                all_bus = [r[0] for r in res_bus]
+
+                # Summary Cards
+                username = session['user']['username'] if 'user' in session else 'Admin'
+                staff_id = session['user'].get('staff_id', '') if 'user' in session else ''
+                full_name = session['user'].get('full_name', username) if 'user' in session else 'Admin'
+                
+                user_check = conn.execute(text("SELECT COUNT(*) FROM customers WHERE staff_id = :u"), {"u": staff_id}).scalar()
+                is_fallback = (user_check == 0)
+                
+                sql_summary = """
                     SELECT 
-                        COALESCE(SUM(amount_paid), 0) as dmo_rec,
-                        COUNT(DISTINCT account_number) as dmo_resp
-                    FROM collections
-                    WHERE date_of_payment BETWEEN :mstart AND :mend
-                """), {"mstart": month_start, "mend": month_end}).fetchone()
-                dmo_recovery = float(dmo_stats[0]) if dmo_stats else 0.0
-                dmo_response = int(dmo_stats[1]) if dmo_stats else 0
-                dmo_label = "Total Current Month Recovery"
+                        (SELECT COALESCE(SUM(amount_paid), 0) FROM collections) as total_recovery,
+                        (SELECT COUNT(*) FROM customers) as total_customers
+                """
+                res_summary = conn.execute(text(sql_summary)).fetchone()
+                
+                if not is_fallback:
+                    dmo_stats = conn.execute(text("""
+                        SELECT 
+                            COALESCE(SUM(col.amount_paid), 0) as dmo_rec,
+                            COUNT(DISTINCT col.account_number) as dmo_resp
+                        FROM collections col
+                        JOIN customers cu ON col.account_number = cu.account_number
+                        WHERE cu.staff_id = :u 
+                        AND col.date_of_payment BETWEEN :mstart AND :mend
+                    """), {"u": staff_id, "mstart": month_start, "mend": month_end}).fetchone()
+                    dmo_recovery = float(dmo_stats[0]) if dmo_stats else 0.0
+                    dmo_response = int(dmo_stats[1]) if dmo_stats else 0
+                    dmo_label = f"{full_name} {now.strftime('%B')} Recovery"
+                else:
+                    dmo_stats = conn.execute(text("""
+                        SELECT 
+                            COALESCE(SUM(amount_paid), 0) as dmo_rec,
+                            COUNT(DISTINCT account_number) as dmo_resp
+                        FROM collections
+                        WHERE date_of_payment BETWEEN :mstart AND :mend
+                    """), {"mstart": month_start, "mend": month_end}).fetchone()
+                    dmo_recovery = float(dmo_stats[0]) if dmo_stats else 0.0
+                    dmo_response = int(dmo_stats[1]) if dmo_stats else 0
+                    dmo_label = "Total Current Month Recovery"
 
-            data['summary'] = {
-                'total_recovery': float(res_summary[0]) if res_summary and res_summary[0] else 0.0,
-                'total_customers': int(res_summary[1]) if res_summary and res_summary[1] else 0,
-                'dmo_recovery': dmo_recovery,
-                'dmo_response': dmo_response,
-                'dmo_label': dmo_label
-            }
+                data['summary'] = {
+                    'total_recovery': float(res_summary[0]) if res_summary and res_summary[0] else 0.0,
+                    'total_customers': int(res_summary[1]) if res_summary and res_summary[1] else 0,
+                    'dmo_recovery': dmo_recovery,
+                    'dmo_response': dmo_response,
+                    'dmo_label': dmo_label
+                }
 
-            # 1. Monthly BU
-            sql_monthly = """
-                SELECT c.business_unit, SUM(p.amount_paid) as total, COUNT(DISTINCT p.account_number) as response
-                FROM collections p
-                JOIN customers c ON p.account_number = c.account_number
-                WHERE p.date_of_payment BETWEEN :mstart AND :mend
-                GROUP BY c.business_unit
-            """
-            res_m = conn.execute(text(sql_monthly), {"mstart": month_start, "mend": month_end}).fetchall()
-            m_map = {r[0]: {"total": float(r[1]), "response": int(r[2])} for r in res_m if r[0]}
-            data['monthly_bu'] = [{"bu": bu, "total": m_map.get(bu, {}).get("total", 0.0), "response": m_map.get(bu, {}).get("response", 0)} for bu in all_bus]
-            
-            # 2. Weekly Breakdown
-            sql_weeks = """
-                SELECT 
-                    c.business_unit,
-                    TO_CHAR(p.date_of_payment, 'W')::integer as week_num,
-                    SUM(p.amount_paid) as total,
-                    COUNT(DISTINCT p.account_number) as response
-                FROM collections p
-                JOIN customers c ON p.account_number = c.account_number
-                WHERE p.date_of_payment BETWEEN :mstart AND :mend
-                GROUP BY c.business_unit, week_num
-                ORDER BY week_num ASC
-            """
-            res_w = conn.execute(text(sql_weeks), {"mstart": month_start, "mend": month_end}).fetchall()
-            weeks_data = {}
-            for r in res_w:
-                bu = r[0]
-                wk = r[1]
-                if wk not in weeks_data:
-                    weeks_data[wk] = {}
-                weeks_data[wk][bu] = {"total": float(r[2]), "response": int(r[3])}
-            
-            weekly_list = []
-            for wk in sorted(weeks_data.keys()):
-                wk_obj = {"week": f"Week {wk}", "data": []}
-                for bu in all_bus:
-                    wk_obj["data"].append({
-                        "bu": bu, 
-                        "total": weeks_data[wk].get(bu, {}).get("total", 0.0),
-                        "response": weeks_data[wk].get(bu, {}).get("response", 0)
-                    })
-                weekly_list.append(wk_obj)
-            data['weekly_breakdown'] = weekly_list
+                # 1. Monthly BU
+                sql_monthly = """
+                    SELECT c.business_unit, SUM(p.amount_paid) as total, COUNT(DISTINCT p.account_number) as response
+                    FROM collections p
+                    JOIN customers c ON p.account_number = c.account_number
+                    WHERE p.date_of_payment BETWEEN :mstart AND :mend
+                    GROUP BY c.business_unit
+                """
+                res_m = conn.execute(text(sql_monthly), {"mstart": month_start, "mend": month_end}).fetchall()
+                m_map = {r[0]: {"total": float(r[1]), "response": int(r[2])} for r in res_m if r[0]}
+                data['monthly_bu'] = [{"bu": bu, "total": m_map.get(bu, {}).get("total", 0.0), "response": m_map.get(bu, {}).get("response", 0)} for bu in all_bus]
+                
+                # 2. Daily BU
+                sql_daily = """
+                    SELECT c.business_unit, SUM(p.amount_paid) as total, COUNT(DISTINCT p.account_number) as response
+                    FROM collections p
+                    JOIN customers c ON p.account_number = c.account_number
+                    WHERE p.date_of_payment BETWEEN :dstart AND :dend
+                    GROUP BY c.business_unit
+                """
+                res_d = conn.execute(text(sql_daily), {"dstart": today_start, "dend": today_end}).fetchall()
+                d_map = {r[0]: {"total": float(r[1]), "response": int(r[2])} for r in res_d if r[0]}
+                data['daily_bu'] = [{"bu": bu, "total": d_map.get(bu, {}).get("total", 0.0), "response": d_map.get(bu, {}).get("response", 0)} for bu in all_bus]
 
-            # 3. Daily BU
-            sql_daily = """
-                SELECT c.business_unit, SUM(p.amount_paid) as total, COUNT(DISTINCT p.account_number) as response
-                FROM collections p
-                JOIN customers c ON p.account_number = c.account_number
-                WHERE p.date_of_payment BETWEEN :dstart AND :dend
-                GROUP BY c.business_unit
-            """
-            res_d = conn.execute(text(sql_daily), {"dstart": today_start, "dend": today_end}).fetchall()
-            d_map = {r[0]: {"total": float(r[1]), "response": int(r[2])} for r in res_d if r[0]}
-            data['daily_bu'] = [{"bu": bu, "total": d_map.get(bu, {}).get("total", 0.0), "response": d_map.get(bu, {}).get("response", 0)} for bu in all_bus]
-
-            # 4. Top/Bottom Officers
-            sql_dmo = """
-                SELECT c.account_officer as officer, 
-                       c.business_unit as bu,
-                       SUM(p.amount_paid) as total
-                FROM collections p
-                JOIN customers c ON p.account_number = c.account_number
-                WHERE p.date_of_payment BETWEEN :mstart AND :mend
-                  AND c.business_unit IS NOT NULL AND c.business_unit != ''
-                  AND c.account_officer IS NOT NULL AND c.account_officer != ''
-                GROUP BY c.account_officer, c.business_unit 
-                ORDER BY total DESC
-            """
-            res_dmo = conn.execute(text(sql_dmo), {"mstart": month_start, "mend": month_end}).fetchall()
-            data['top_dmo'] = [dict(r._mapping) for r in res_dmo[:5]]
-            data['bottom_dmo'] = [dict(r._mapping) for r in res_dmo[-5:] if r.total > 0]
+                # 3. Top/Bottom Officers
+                sql_dmo = """
+                    SELECT c.account_officer as officer, 
+                           c.business_unit as bu,
+                           SUM(p.amount_paid) as total
+                    FROM collections p
+                    JOIN customers c ON p.account_number = c.account_number
+                    WHERE p.date_of_payment BETWEEN :mstart AND :mend
+                      AND c.business_unit IS NOT NULL AND c.business_unit != ''
+                      AND c.account_officer IS NOT NULL AND c.account_officer != ''
+                    GROUP BY c.account_officer, c.business_unit 
+                    ORDER BY total DESC
+                """
+                res_dmo = conn.execute(text(sql_dmo), {"mstart": month_start, "mend": month_end}).fetchall()
+                data['top_dmo'] = [dict(r._mapping) for r in res_dmo[:5]]
+                data['bottom_dmo'] = [dict(r._mapping) for r in res_dmo[-5:] if r.total > 0]
             
         return jsonify({"success": True, "data": data})
     except Exception as e:
@@ -900,7 +1069,7 @@ def get_dashboard_stats():
 @app.route('/api/autocomplete')
 @login_required
 def api_autocomplete():
-    query = request.args.get('q', '').strip()
+    query = request.values.get('q', '').strip()
     if len(query) < 3:
         return jsonify([])
 
@@ -1447,10 +1616,10 @@ def job_form_initial_data():
         logger.error(f"Job form initial data error: {e}", exc_info=True)
         return jsonify({"error": f"An internal error occurred while retrieving job form configuration: {str(e)}"}), 500
 
-@app.route('/api/job-form/undertakings')
+@app.route('/api/job-form/undertakings', methods=['GET', 'POST'])
 @login_required
 def job_form_undertakings():
-    bus = request.args.getlist('bu')
+    bus = request.values.getlist('bu')
     if not bus:
         return jsonify([])
     try:
@@ -1472,12 +1641,12 @@ def job_form_undertakings():
         logger.error(f"Job form undertakings error: {e}", exc_info=True)
         return jsonify([])
 
-@app.route('/api/job-form/officers')
+@app.route('/api/job-form/officers', methods=['GET', 'POST'])
 @login_required
 def job_form_officers():
-    bus = request.args.getlist('bu')
-    otypes = request.args.getlist('type')
-    undertakings = request.args.getlist('undertaking')
+    bus = request.values.getlist('bu')
+    otypes = request.values.getlist('type')
+    undertakings = request.values.getlist('undertaking')
     if not bus or not otypes:
         return jsonify([])
     try:
@@ -1490,12 +1659,12 @@ def job_form_officers():
         logger.error(f"Job form officers error: {e}", exc_info=True)
         return jsonify([])
 
-@app.route('/api/job-form/feeders')
+@app.route('/api/job-form/feeders', methods=['GET', 'POST'])
 @login_required
 def job_form_feeders():
-    bus = request.args.getlist('bu')
-    names = request.args.getlist('name')
-    undertakings = request.args.getlist('undertaking')
+    bus = request.values.getlist('bu')
+    names = request.values.getlist('name')
+    undertakings = request.values.getlist('undertaking')
     if not bus or not names:
         return jsonify([])
     try:
@@ -1521,12 +1690,12 @@ def job_form_feeders():
         logger.error(f"Job form feeders error: {e}", exc_info=True)
         return jsonify([])
 
-@app.route('/api/job-form/dts')
+@app.route('/api/job-form/dts', methods=['GET', 'POST'])
 @login_required
 def job_form_dts():
-    bus = request.args.getlist('bu')
-    feeders = request.args.getlist('feeder')
-    undertakings = request.args.getlist('undertaking')
+    bus = request.values.getlist('bu')
+    feeders = request.values.getlist('feeder')
+    undertakings = request.values.getlist('undertaking')
     if not bus or not feeders:
         return jsonify([])
     try:
@@ -1556,12 +1725,12 @@ def job_form_dts():
         logger.error(f"Job form DTs error: {e}", exc_info=True)
         return jsonify([])
 
-@app.route('/api/job-form/preview')
+@app.route('/api/job-form/preview', methods=['GET', 'POST'])
 @login_required
 def job_form_preview():
-    otypes_val = request.args.getlist('type')
-    onames_val = request.args.getlist('name')
-    bus_val = request.args.getlist('bu')
+    otypes_val = request.values.getlist('type')
+    onames_val = request.values.getlist('name')
+    bus_val = request.values.getlist('bu')
     
     if session['user']['role'] == 'Vendor':
         otypes_val = ['Vendor']
@@ -1573,22 +1742,23 @@ def job_form_preview():
                 
     filters = {
         'bus': bus_val,
-        'undertakings': request.args.getlist('undertaking'),
+        'undertakings': request.values.getlist('undertaking'),
         'otypes': otypes_val,
         'onames': onames_val,
-        'feeders': request.args.getlist('feeder'),
-        'dts': request.args.getlist('dt'),
-        'ftype': request.args.get('form_type', 'Full')
+        'feeders': request.values.getlist('feeder'),
+        'dts': request.values.getlist('dt'),
+        'ftype': request.values.get('form_type', 'Full')
     }
     # Default columns for preview
     columns = ["account_number", "account_name", "account_address", "closing_balance", "pos_other_payments", "adjustment", "discount", "outstanding_balance", "account_officer"]
     
-    page = int(request.args.get('page', 1))
-    per_page_arg = request.args.get('per_page', '50')
+    page = int(request.values.get('page', 1))
+    per_page_arg = request.values.get('per_page', '50')
     
     try:
-        df = job_form_service.get_job_form_data(filters, columns)
-        if df.empty:
+        total_rows = job_form_service.count_job_form_rows(filters)
+        
+        if total_rows == 0:
             return jsonify({
                 "data": [],
                 "total_rows": 0,
@@ -1598,27 +1768,19 @@ def job_form_preview():
                 "totals": {}
             })
             
-        # Calculate Grand Totals over the entire filtered dataset
-        numeric_cols = ["closing_balance", "pos_other_payments", "adjustment", "discount", "outstanding_balance"]
-        totals = {}
-        for col in numeric_cols:
-            if col in df.columns:
-                totals[col] = float(df[col].fillna(0).sum())
-                
-        total_rows = int(df.shape[0])
-        
         if per_page_arg.lower() == 'all':
             per_page = total_rows
             pages = 1
-            df_sliced = df
+            df_sliced = job_form_service.get_job_form_data(filters, columns, page=None, per_page=None)
         else:
             per_page = int(per_page_arg)
             pages = max(1, math.ceil(total_rows / per_page))
             page = max(1, min(page, pages))
-            start_idx = (page - 1) * per_page
-            end_idx = start_idx + per_page
-            df_sliced = df.iloc[start_idx:end_idx]
+            df_sliced = job_form_service.get_job_form_data(filters, columns, page=page, per_page=per_page)
             
+        # Calculate Grand Totals directly via SQL (super efficient!)
+        totals = job_form_service.calculate_job_form_totals(filters)
+                
         return jsonify({
             "data": df_sliced.to_dict(orient='records'),
             "total_rows": total_rows,
@@ -1631,12 +1793,12 @@ def job_form_preview():
         logger.error(f"Job form preview error: {e}", exc_info=True)
         return jsonify({"error": "An internal error occurred while generating the preview."}), 500
 
-@app.route('/api/job-form/count')
+@app.route('/api/job-form/count', methods=['GET', 'POST'])
 @login_required
 def job_form_count():
-    otypes_val = request.args.getlist('type')
-    onames_val = request.args.getlist('name')
-    bus_val = request.args.getlist('bu')
+    otypes_val = request.values.getlist('type')
+    onames_val = request.values.getlist('name')
+    bus_val = request.values.getlist('bu')
     
     if session['user']['role'] == 'Vendor':
         otypes_val = ['Vendor']
@@ -1648,12 +1810,12 @@ def job_form_count():
                 
     filters = {
         'bus': bus_val,
-        'undertakings': request.args.getlist('undertaking'),
+        'undertakings': request.values.getlist('undertaking'),
         'otypes': otypes_val,
         'onames': onames_val,
-        'feeders': request.args.getlist('feeder'),
-        'dts': request.args.getlist('dt'),
-        'ftype': request.args.get('form_type', 'Full')
+        'feeders': request.values.getlist('feeder'),
+        'dts': request.values.getlist('dt'),
+        'ftype': request.values.get('form_type', 'Full')
     }
     try:
         count = job_form_service.count_job_form_rows(filters)
@@ -1665,10 +1827,33 @@ def job_form_count():
 @app.route('/api/job-form/export', methods=['POST'])
 @login_required
 def job_form_export():
-    data = request.get_json()
-    otypes_val = data.get('type', [])
-    onames_val = data.get('name', [])
-    bus_val = data.get('bu', [])
+    if request.is_json:
+        data = request.get_json() or {}
+        otypes_val = data.get('type', [])
+        onames_val = data.get('name', [])
+        bus_val = data.get('bu', [])
+        filters = {
+            'bus': bus_val,
+            'undertakings': data.get('undertaking', []),
+            'otypes': otypes_val,
+            'onames': onames_val,
+            'feeders': data.get('feeder', []),
+            'dts': data.get('dt', []),
+            'ftype': data.get('form_type', 'Full')
+        }
+    else:
+        otypes_val = request.values.getlist('type')
+        onames_val = request.values.getlist('name')
+        bus_val = request.values.getlist('bu')
+        filters = {
+            'bus': bus_val,
+            'undertakings': request.values.getlist('undertaking'),
+            'otypes': otypes_val,
+            'onames': onames_val,
+            'feeders': request.values.getlist('feeder'),
+            'dts': request.values.getlist('dt'),
+            'ftype': request.values.get('form_type', 'Full')
+        }
     
     if session['user']['role'] == 'Vendor':
         otypes_val = ['Vendor']
@@ -1678,21 +1863,34 @@ def job_form_export():
                 res = conn.execute(text("SELECT DISTINCT business_unit FROM customers WHERE account_officer = :v AND business_unit IS NOT NULL AND business_unit != ''"), {"v": session['user']['username']}).fetchall()
                 bus_val = [r[0] for r in res]
                 
-    filters = {
-        'bus': bus_val,
-        'undertakings': data.get('undertaking', []),
-        'otypes': otypes_val,
-        'onames': onames_val,
-        'feeders': data.get('feeder', []),
-        'dts': data.get('dt', []),
-        'ftype': data.get('form_type', 'Full')
-    }
-    columns = data.get('columns', [])
+
     try:
-        df = job_form_service.get_job_form_data(filters, columns)
+        # Define the full column list in the desired order
+        full_column_order = [
+            "account_number",
+            "account_name",
+            "account_address",
+            "closing_balance",
+            "pos_other_payments",
+            "adjustment",
+            "discount",
+            "outstanding_balance",
+            "payment_plan_status",
+            "last_payment_date",
+            "phone_number",
+            "dt_name",
+            "feeder",
+            "account_officer"
+        ]
+        
+        df = job_form_service.get_job_form_data(filters, full_column_order)
         if df.empty:
             return jsonify({"error": "No data found for selected filters"}), 404
             
+        # Reorder columns to match the desired order
+        available_columns = [col for col in full_column_order if col in df.columns]
+        df = df[available_columns]
+        
         # Rename columns to Pretty Titles for export to match main_app.py nomenclature
         pretty_names = {
             "account_number": "Account Number", 
@@ -1713,7 +1911,7 @@ def job_form_export():
         actual_remapping = {k: v for k, v in pretty_names.items() if k in df.columns}
         df.rename(columns=actual_remapping, inplace=True)
 
-        # Generate filename to exactly match job_form_ui.py nomenclature: {off_str}_{form_type}_{stamp}.xlsx
+        # Generate filename base
         officers = filters.get('onames') or []
         if not officers or len(officers) > 2:
             off_str = "MultipleOfficers"
@@ -1722,20 +1920,26 @@ def job_form_export():
             
         form_type = filters.get('ftype', 'Full').replace(" ", "")
         stamp = datetime.now().strftime('%d-%m-%Y')
-        filename = secure_filename(f"{off_str}_{form_type}_{stamp}.xlsx")
+        filename_base = secure_filename(f"{off_str}_{form_type}_{stamp}")
         
-        # Stream Excel directly into in-memory buffer
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False, sheet_name='Job Form')
-        buffer.seek(0)
+        # Check if a specific format is requested (csv or xlsx)
+        requested_format = None
+        if request.is_json:
+            requested_format = (data.get('format') or '').lower()
+        else:
+            requested_format = (request.values.get('format') or '').lower()
+        
+        export_format = requested_format if requested_format in ['csv', 'xlsx'] else DEFAULT_EXPORT_FORMAT
+        
+        # Create export buffer
+        buffer, filename, mimetype = create_export_buffer(df, filename_base, sheet_name='Job Form', format_type=export_format)
         
         # Return the file directly
         return send_file(
             buffer,
             download_name=filename,
             as_attachment=True,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            mimetype=mimetype
         )
     except Exception as e:
         logger.error(f"Job Form Export Error: {e}", exc_info=True)
@@ -1745,13 +1949,13 @@ def job_form_export():
 @app.route('/api/performance/rank')
 @login_required
 def api_performance_rank():
-    period = request.args.get('period', 'daily')
-    otype = request.args.get('otype', 'Both')
-    start_date = request.args.get('start')
-    end_date = request.args.get('end')
-    year = request.args.get('year')
-    quarter = request.args.get('quarter', 'Full')
-    show_all = request.args.get('all', 'false') == 'true'
+    period = request.values.get('period', 'daily')
+    otype = request.values.get('otype', 'Both')
+    start_date = request.values.get('start')
+    end_date = request.values.get('end')
+    year = request.values.get('year')
+    quarter = request.values.get('quarter', 'Full')
+    show_all = request.values.get('all', 'false') == 'true'
     
     try:
         # Determine date range based on period
@@ -1953,35 +2157,42 @@ def api_performance_export():
         # Reorder columns
         final_df = final_df[['Rank', 'Officer Name', 'Business Unit', 'Officer Type', 'Total Recovery']]
         
-        filename = generate_descriptive_filename("Adv._Variance_Analysis", {
+        # Get filename base (without extension)
+        filename_base = generate_descriptive_filename("Adv._Variance_Analysis", {
             "otype": otype,
             "period": period,
             "start": start,
             "end": end,
             "year": year,
             "quarter": quarter
-        })
+        }).replace('.xlsx', '')
         
-        # Stream Excel directly into in-memory buffer to prevent memory leaks and disk usage
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            final_df.to_excel(writer, index=False, sheet_name='Officer Ranking')
-        buffer.seek(0)
+        # Check if a specific format is requested
+        requested_format = (data.get('format') or '').lower()
+        export_format = requested_format if requested_format in ['csv', 'xlsx'] else DEFAULT_EXPORT_FORMAT
         
-        cache_export_file(filename, buffer.getvalue())
-        return jsonify({"success": True, "filename": filename})
+        # Create export buffer
+        buffer, filename, mimetype = create_export_buffer(final_df, filename_base, sheet_name='Officer Ranking', format_type=export_format)
+        
+        # Return the file directly
+        return send_file(
+            buffer,
+            download_name=filename,
+            as_attachment=True,
+            mimetype=mimetype
+        )
     except Exception as e:
         logger.error(f"Performance Export Error: {e}", exc_info=True)
         return jsonify({"error": "An internal error occurred while exporting performance ranking."}), 500
 
-@app.route('/api/payments/preview')
+@app.route('/api/payments/preview', methods=['GET', 'POST'])
 @login_required
 def api_payments_preview():
-    bus = request.args.getlist('bu')
-    otypes = request.args.getlist('type')
-    onames = request.args.getlist('officer')
-    start_date = request.args.get('start')
-    end_date = request.args.get('end')
+    bus = request.values.getlist('bu')
+    otypes = request.values.getlist('type')
+    onames = request.values.getlist('officer')
+    start_date = request.values.get('start')
+    end_date = request.values.get('end')
     
     if session['user']['role'] == 'Vendor':
         otypes = ['Vendor']
@@ -1991,8 +2202,8 @@ def api_payments_preview():
                 res = conn.execute(text("SELECT DISTINCT business_unit FROM customers WHERE account_officer = :v AND business_unit IS NOT NULL AND business_unit != ''"), {"v": session['user']['username']}).fetchall()
                 bus = [r[0] for r in res]
                 
-    page = int(request.args.get('page', 1))
-    per_page_arg = request.args.get('per_page', '50')
+    page = int(request.values.get('page', 1))
+    per_page_arg = request.values.get('per_page', '50')
     
     if not bus or not otypes or not onames:
         return jsonify({
@@ -2104,12 +2315,19 @@ def api_payments_preview():
 @app.route('/api/payments/export', methods=['POST'])
 @login_required
 def api_payments_export():
-    data = request.get_json()
-    bus = data.get('bu', [])
-    otypes = data.get('type', [])
-    onames = data.get('officer', [])
-    start_date = data.get('start')
-    end_date = data.get('end')
+    if request.is_json:
+        data = request.get_json() or {}
+        bus = data.get('bu', [])
+        otypes = data.get('type', [])
+        onames = data.get('officer', [])
+        start_date = data.get('start')
+        end_date = data.get('end')
+    else:
+        bus = request.values.getlist('bu')
+        otypes = request.values.getlist('type')
+        onames = request.values.getlist('officer')
+        start_date = request.values.get('start')
+        end_date = request.values.get('end')
     
     if session['user']['role'] == 'Vendor':
         otypes = ['Vendor']
@@ -2123,7 +2341,7 @@ def api_payments_export():
         return jsonify({"error": "Missing filters"}), 400
 
     try:
-        # Optimized SQL: Using LATERAL join for other_payments instead of correlated subquery
+        # Optimized SQL (no slow lateral join, matches preview)
         sql = text(r"""
             SELECT 
                 p.account_number as "Account Number", 
@@ -2137,19 +2355,13 @@ def api_payments_export():
                 p.date_of_payment as "Date of Payment", 
                 COALESCE(afs.total_discounts, 0) as "Total Discount", 
                 COALESCE(afs.total_adjustments, 0) as "Total Adjustment", 
-                COALESCE(op.sum_other_payments, 0) as "Other Payment",
+                0 as "Other Payment",
                 COALESCE(afs.outstanding_balance, 0) as "Outstanding Balance",
                 COALESCE(afs.payment_plan, 'No') as "Payment Plan (Yes/No)",
                 c.account_officer as "Account Officer"
             FROM all_payments p
             JOIN customers c ON p.account_number = c.account_number
             LEFT JOIN account_financial_summary afs ON p.account_number = afs.account_number
-            LEFT JOIN LATERAL (
-                SELECT SUM(amount_paid) as sum_other_payments 
-                FROM other_payments 
-                WHERE account_number = p.account_number 
-                AND CAST(date_of_payment AS DATE) BETWEEN CAST(:start AS DATE) AND CAST(:end AS DATE)
-            ) op ON true
             WHERE c.business_unit = ANY(:bus)
             AND c.officer_type = ANY(:otypes)
             AND c.account_officer = ANY(:onames)
@@ -2157,43 +2369,51 @@ def api_payments_export():
             ORDER BY p.date_of_payment DESC
         """)
         
-        with engine.connect() as conn:
-            # Fetch data using Pandas read_sql which is reliable for large datasets
-            df = pd.read_sql(sql, conn, params={
-                "bus": list(bus),
-                "otypes": list(otypes),
-                "onames": list(onames),
-                "start": start_date,
-                "end": end_date
-            })
-            
-        if df.empty:
-            return jsonify({"error": "No data found for selected criteria"}), 404
+        params = {
+            "bus": list(bus),
+            "otypes": list(otypes),
+            "onames": list(onames),
+            "start": start_date,
+            "end": end_date
+        }
 
-        # Clean up date format for Excel
-        if 'Date of Payment' in df.columns:
-            df['Date of Payment'] = pd.to_datetime(df['Date of Payment']).dt.strftime('%Y-%m-%d %H:%M:%S')
-            
-        filename = generate_descriptive_filename("Payment_Listing", {
+        # Get filename base (without extension)
+        filename_base = generate_descriptive_filename("Payment_Listing", {
             "bu": bus,
             "otypes": otypes,
             "start": start_date,
             "end": end_date
-        })
+        }).replace('.xlsx', '')
         
-        # Stream Excel directly into in-memory buffer
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False, sheet_name='Payments')
-        buffer.seek(0)
+        # Check if a specific format is requested
+        requested_format = None
+        if request.is_json:
+            requested_format = (data.get('format') or '').lower()
+        else:
+            requested_format = (request.values.get('format') or '').lower()
         
-        # Return the file directly
-        return send_file(
+        export_format = requested_format if requested_format in ['csv', 'xlsx'] else DEFAULT_EXPORT_FORMAT
+        
+        headers = [
+            "Account Number", "Account Name", "Account Address",
+            "Business Unit", "Undertaking", "DT Name", "Closing Balance",
+            "Amount Paid", "Date of Payment", "Total Discount", "Total Adjustment",
+            "Other Payment", "Outstanding Balance", "Payment Plan (Yes/No)", "Account Officer"
+        ]
+
+        # Use pandas to read data and create export buffer (faster, no temp files!)
+        with engine.connect() as conn:
+            df = pd.read_sql_query(sql, conn, params=params)
+        
+        buffer, final_filename, mimetype = create_export_buffer(df, filename_base, sheet_name='Payments', format_type=export_format)
+        
+        response = send_file(
             buffer,
-            download_name=filename,
+            download_name=final_filename,
             as_attachment=True,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            mimetype=mimetype
         )
+        return response
     except Exception as e:
         logger.error(f"Payment Export Error: {e}", exc_info=True)
         return jsonify({"error": f"An internal error occurred while exporting the payments report: {str(e)}"}), 500
@@ -2201,9 +2421,9 @@ def api_payments_export():
 @app.route('/api/customers/preview')
 @login_required
 def api_customers_preview():
-    bus = request.args.getlist('bu')
-    otypes = request.args.getlist('type')
-    onames = request.args.getlist('officer')
+    bus = request.values.getlist('bu')
+    otypes = request.values.getlist('type')
+    onames = request.values.getlist('officer')
     
     if session['user']['role'] == 'Vendor':
         otypes = ['Vendor']
@@ -2213,8 +2433,8 @@ def api_customers_preview():
                 res = conn.execute(text("SELECT DISTINCT business_unit FROM customers WHERE account_officer = :v AND business_unit IS NOT NULL AND business_unit != ''"), {"v": session['user']['username']}).fetchall()
                 bus = [r[0] for r in res]
     
-    page = int(request.args.get('page', 1))
-    per_page_arg = request.args.get('per_page', '50')
+    page = int(request.values.get('page', 1))
+    per_page_arg = request.values.get('per_page', '50')
     
     if not bus or not otypes or not onames:
         return jsonify({
@@ -2227,21 +2447,14 @@ def api_customers_preview():
         })
 
     try:
-        # Calculate Grand Totals and Total Rows globally using SQL
-        # Optimized with LATERAL joins for performance on filtered results
+        # Calculate Grand Totals and Total Rows using precomputed account_financial_summary (faster!)
         count_sql = text("""
             SELECT 
                 COUNT(*) as total_rows,
                 SUM(COALESCE(afs.total_payments, 0)) as sum_payments,
-                SUM(c.closing_balance - COALESCE(afs.total_payments, 0) - COALESCE(afs.total_discounts, 0) - COALESCE(afs.total_adjustments, 0)) as sum_outstanding
+                SUM(COALESCE(afs.outstanding_balance, 0)) as sum_outstanding
             FROM customers c
-            LEFT JOIN LATERAL (
-                SELECT 
-                    (SELECT COALESCE(SUM(amount_paid),0) FROM collections WHERE account_number = c.account_number) + 
-                    (SELECT COALESCE(SUM(amount_paid),0) FROM other_payments WHERE account_number = c.account_number) as total_payments,
-                    (SELECT COALESCE(SUM(discounted_amount),0) FROM discounts WHERE account_number = c.account_number AND (lower(status) = 'approved' OR lower(user_who_approved) LIKE '%okoye%' OR lower(user_who_approved) LIKE '%forstinus%')) as total_discounts,
-                    (SELECT COALESCE(SUM(adjustment_amount),0) FROM adjustments WHERE account_number = c.account_number AND (lower(status) = 'approved' OR lower(user_who_approved_adjustment) LIKE '%okoye%' OR lower(user_who_approved_adjustment) LIKE '%forstinus%')) as total_adjustments
-            ) afs ON true
+            LEFT JOIN account_financial_summary afs ON c.account_number = afs.account_number
             WHERE c.business_unit = ANY(:bus)
             AND c.officer_type = ANY(:otypes)
             AND c.account_officer = ANY(:onames)
@@ -2273,8 +2486,7 @@ def api_customers_preview():
             offset = (page - 1) * per_page
             limit_clause = f" LIMIT {per_page} OFFSET {offset}"
 
-        # Complex query to get all requested fields, aligning with main_app.py standards
-        # Optimized with LATERAL joins and scalar subqueries for performance
+        # Complex query to get all requested fields using precomputed account_financial_summary (way faster!)
         sql = text(f"""
             SELECT 
                 c.account_number, 
@@ -2292,13 +2504,7 @@ def api_customers_preview():
                 COALESCE(afs.total_adjustments, 0) as total_adjustments_approved,
                 (SELECT MAX(date_of_payment) FROM collections WHERE account_number = c.account_number) as last_payment_date
             FROM customers c
-            LEFT JOIN LATERAL (
-                SELECT 
-                    (SELECT COALESCE(SUM(amount_paid),0) FROM collections WHERE account_number = c.account_number) + 
-                    (SELECT COALESCE(SUM(amount_paid),0) FROM other_payments WHERE account_number = c.account_number) as total_payments,
-                    (SELECT COALESCE(SUM(discounted_amount),0) FROM discounts WHERE account_number = c.account_number AND (lower(status) = 'approved' OR lower(user_who_approved) LIKE '%okoye%' OR lower(user_who_approved) LIKE '%forstinus%')) as total_discounts,
-                    (SELECT COALESCE(SUM(adjustment_amount),0) FROM adjustments WHERE account_number = c.account_number AND (lower(status) = 'approved' OR lower(user_who_approved_adjustment) LIKE '%okoye%' OR lower(user_who_approved_adjustment) LIKE '%forstinus%')) as total_adjustments
-            ) afs ON true
+            LEFT JOIN account_financial_summary afs ON c.account_number = afs.account_number
             WHERE c.business_unit = ANY(:bus)
             AND c.officer_type = ANY(:otypes)
             AND c.account_officer = ANY(:onames)
@@ -2339,10 +2545,15 @@ def api_customers_preview():
 @app.route('/api/customers/export', methods=['POST'])
 @login_required
 def api_customers_export():
-    data = request.get_json()
-    bus = data.get('bu', [])
-    otypes = data.get('type', [])
-    onames = data.get('officer', [])
+    if request.is_json:
+        data = request.get_json() or {}
+        bus = data.get('bu', [])
+        otypes = data.get('type', [])
+        onames = data.get('officer', [])
+    else:
+        bus = request.values.getlist('bu')
+        otypes = request.values.getlist('type')
+        onames = request.values.getlist('officer')
     
     if session['user']['role'] == 'Vendor':
         otypes = ['Vendor']
@@ -2356,7 +2567,7 @@ def api_customers_export():
         return jsonify({"error": "Missing filters"}), 400
 
     try:
-        # Optimized SQL using LATERAL joins for better performance on filtered results
+        # Optimized SQL using precomputed account_financial_summary view (way faster!)
         sql = text("""
             SELECT 
                 c.account_number as "Account Number", 
@@ -2368,77 +2579,63 @@ def api_customers_export():
                 c.feeder as "Feeder Name",
                 c.dt_name as "DT Name",
                 (SELECT phone_number FROM validation WHERE account_number = c.account_number ORDER BY id DESC LIMIT 1) as "Phone Number",
-                c.closing_balance as "Closing Balance",
-                COALESCE(afs.total_payments, 0) as total_payments,
-                COALESCE(afs.total_discounts, 0) as total_discounts_approved,
-                COALESCE(afs.total_adjustments, 0) as total_adjustments_approved,
-                (SELECT MAX(date_of_payment) FROM collections WHERE account_number = c.account_number) as "Last Payment Date"
+                COALESCE(c.closing_balance, 0) as "Closing Balance",
+                COALESCE(afs.total_payments, 0) as "Total Payments",
+                COALESCE(afs.total_discounts, 0) as "Valid Discount Amount",
+                COALESCE(afs.total_adjustments, 0) as "Valid Adjustment Amount",
+                COALESCE(afs.outstanding_balance, 0) as "Outstanding Balance",
+                (SELECT MAX(date_of_payment) FROM collections WHERE account_number = c.account_number) as "Last Payment Date",
+                COALESCE(afs.payment_plan, 'No') as "Current Payment-Plan Status"
             FROM customers c
-            LEFT JOIN LATERAL (
-                SELECT 
-                    (SELECT COALESCE(SUM(amount_paid),0) FROM collections WHERE account_number = c.account_number) + 
-                    (SELECT COALESCE(SUM(amount_paid),0) FROM other_payments WHERE account_number = c.account_number) as total_payments,
-                    (SELECT COALESCE(SUM(discounted_amount),0) FROM discounts WHERE account_number = c.account_number AND (lower(status) = 'approved' OR lower(user_who_approved) LIKE '%okoye%' OR lower(user_who_approved) LIKE '%forstinus%')) as total_discounts,
-                    (SELECT COALESCE(SUM(adjustment_amount),0) FROM adjustments WHERE account_number = c.account_number AND (lower(status) = 'approved' OR lower(user_who_approved_adjustment) LIKE '%okoye%' OR lower(user_who_approved_adjustment) LIKE '%forstinus%')) as total_adjustments
-            ) afs ON true
+            LEFT JOIN account_financial_summary afs ON c.account_number = afs.account_number
             WHERE c.business_unit = ANY(:bus)
             AND c.officer_type = ANY(:otypes)
             AND c.account_officer = ANY(:onames)
             ORDER BY c.closing_balance DESC
         """)
         
-        with engine.connect() as conn:
-            df = pd.read_sql(sql, conn, params={
-                "bus": list(bus),
-                "otypes": list(otypes),
-                "onames": list(onames)
-            })
-            
-        if df.empty:
-            return jsonify({"error": "No data found for selected criteria"}), 404
+        params = {
+            "bus": list(bus),
+            "otypes": list(otypes),
+            "onames": list(onames)
+        }
 
-        # Calculate derived fields in Pandas
-        df['Total Payments'] = pd.to_numeric(df['total_payments'], errors='coerce').fillna(0)
-        df['Valid Discount Amount'] = pd.to_numeric(df['total_discounts_approved'], errors='coerce').fillna(0)
-        df['Valid Adjustment Amount'] = pd.to_numeric(df['total_adjustments_approved'], errors='coerce').fillna(0)
-        df['Closing Balance'] = pd.to_numeric(df['Closing Balance'], errors='coerce').fillna(0)
+        # Get filename base (without extension)
+        filename_base = generate_descriptive_filename("Customer_Collection", {
+            "bu": bus,
+            "otypes": otypes
+        }).replace('.xlsx', '')
         
-        df['Outstanding Balance'] = df['Closing Balance'] - df['Total Payments'] - df['Valid Discount Amount'] - df['Valid Adjustment Amount']
+        # Check if a specific format is requested
+        requested_format = None
+        if request.is_json:
+            requested_format = (data.get('format') or '').lower()
+        else:
+            requested_format = (request.values.get('format') or '').lower()
         
-        # Vectorized payment plan status check
-        is_pp = (df['Total Payments'] >= 0.3 * df['Closing Balance']) & (df['Outstanding Balance'] > 0)
-        df['Current Payment-Plan Status'] = np.where(is_pp, "Yes", "No")
+        export_format = requested_format if requested_format in ['csv', 'xlsx'] else DEFAULT_EXPORT_FORMAT
         
-        # Convert timezone-aware datetimes to string for Excel export compatibility
-        if 'Last Payment Date' in df.columns:
-            df['Last Payment Date'] = pd.to_datetime(df['Last Payment Date'], errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S')
-        
-        export_df = df[[
+        headers = [
             'Account Number', 'Account Name', 'Account Address', 'Business Unit', 
             'Undertaking', 'Account Officer', 'Feeder Name', 'DT Name', 'Phone Number',
             'Closing Balance', 'Total Payments', 'Valid Discount Amount', 
             'Valid Adjustment Amount', 'Outstanding Balance', 'Last Payment Date', 
             'Current Payment-Plan Status'
-        ]]
-            
-        filename = generate_descriptive_filename("Customer_Collection", {
-            "bu": bus,
-            "otypes": otypes
-        })
+        ]
+
+        # Use pandas to read data and create export buffer (faster, no temp files!)
+        with engine.connect() as conn:
+            df = pd.read_sql_query(sql, conn, params=params)
         
-        # Stream Excel directly into in-memory buffer
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            export_df.to_excel(writer, index=False, sheet_name='Customers')
-        buffer.seek(0)
+        buffer, final_filename, mimetype = create_export_buffer(df, filename_base, sheet_name='Customers', format_type=export_format)
         
-        # Return the file directly
-        return send_file(
+        response = send_file(
             buffer,
-            download_name=filename,
+            download_name=final_filename,
             as_attachment=True,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            mimetype=mimetype
         )
+        return response
     except Exception as e:
         logger.error(f"Customer Export Error: {e}", exc_info=True)
         return jsonify({"error": f"An internal error occurred while exporting the customer report: {str(e)}"}), 500
@@ -2446,7 +2643,13 @@ def api_customers_export():
 @app.route('/download/<filename>')
 @login_required
 def download_file(filename):
-    # Retrieve Excel file from in-memory cache if available (memory leak & disk write prevention)
+    # Determine mimetype based on file extension
+    if filename.endswith('.csv'):
+        mimetype = 'text/csv'
+    else:
+        mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    
+    # Retrieve file from in-memory cache if available (memory leak & disk write prevention)
     cached = EXPORT_CACHE.pop(filename, None)
     if cached:
         buffer = io.BytesIO(cached["data"])
@@ -2454,7 +2657,7 @@ def download_file(filename):
             buffer,
             download_name=filename,
             as_attachment=True,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            mimetype=mimetype
         )
     
     # Fallback to local disk uploads directory for older exports or other upload files

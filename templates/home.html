@@ -1,98 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Executive Homepage
-<!-- WEEKLY PERFORMANCE MODAL -->
-<div id="weekly-modal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 9999; padding: 20px;">
-    <div class="card" style="padding: 30px; width: 100%; max-width: 1200px; max-height: 90vh; overflow-y: auto; background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <h3 style="margin: 0; color: var(--primary-color);">Weekly Performance</h3>
-            <div style="display: flex; gap: 10px;">
-                <select id="modalFilterMonth" class="form-control" style="width: auto; padding: 0.5rem; border-radius: 6px;">
-                    <option value="">Current Month</option>
-                    <option value="1">Jan</option><option value="2">Feb</option><option value="3">Mar</option>
-                    <option value="4">Apr</option><option value="5">May</option><option value="6">Jun</option>
-                    <option value="7">Jul</option><option value="8">Aug</option><option value="9">Sep</option>
-                    <option value="10">Oct</option><option value="11">Nov</option><option value="12">Dec</option>
-                </select>
-                <select id="modalFilterYear" class="form-control" style="width: auto; padding: 0.5rem; border-radius: 6px;">
-                    <option value="">Current Year</option>
-                    <option value="2024">2024</option>
-                    <option value="2025">2025</option>
-                    <option value="2026">2026</option>
-                </select>
-                <button class="btn-primary" onclick="loadWeeklyStats()" style="padding: 0.5rem 1rem; border-radius: 6px;">Load Data</button>
-                <button type="button" onclick="document.getElementById('weekly-modal').style.display='none'" style="padding: 0.5rem 1rem; border-radius: 6px; background: transparent; border: 1px solid var(--border-color); cursor: pointer;">Close</button>
-            </div>
-        </div>
-        
-        <div style="overflow-x: auto;">
-            <table class="table" style="width: 100%; text-align: left; border-collapse: collapse;">
-                <thead>
-                    <tr style="border-bottom: 2px solid var(--border-color); color: var(--text-muted); font-size: 13px;">
-                        <th style="padding: 6px 5px;">Business Unit</th>
-                        <th style="padding: 6px 5px; text-align: right;">Week 1</th>
-                        <th style="padding: 6px 5px; text-align: right;">Week 2</th>
-                        <th style="padding: 6px 5px; text-align: right;">Week 3</th>
-                        <th style="padding: 6px 5px; text-align: right;">Week 4</th>
-                        <th style="padding: 6px 5px; text-align: right;">Week 5+</th>
-                        <th style="padding: 6px 5px; text-align: right; color: var(--primary-color);">Grand Total</th>
-                    </tr>
-                </thead>
-                <tbody id="tbl-modal-weekly-recovery">
-                    <tr><td colspan="7" style="text-align: center; padding: 20px;">Load data to see weekly performance...</td></tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-
-{% endblock %}
-{% block page_title %}Executive Homepage
-<!-- WEEKLY PERFORMANCE MODAL -->
-<div id="weekly-modal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 9999; padding: 20px;">
-    <div class="card" style="padding: 30px; width: 100%; max-width: 1200px; max-height: 90vh; overflow-y: auto; background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <h3 style="margin: 0; color: var(--primary-color);">Weekly Performance</h3>
-            <div style="display: flex; gap: 10px;">
-                <select id="modalFilterMonth" class="form-control" style="width: auto; padding: 0.5rem; border-radius: 6px;">
-                    <option value="">Current Month</option>
-                    <option value="1">Jan</option><option value="2">Feb</option><option value="3">Mar</option>
-                    <option value="4">Apr</option><option value="5">May</option><option value="6">Jun</option>
-                    <option value="7">Jul</option><option value="8">Aug</option><option value="9">Sep</option>
-                    <option value="10">Oct</option><option value="11">Nov</option><option value="12">Dec</option>
-                </select>
-                <select id="modalFilterYear" class="form-control" style="width: auto; padding: 0.5rem; border-radius: 6px;">
-                    <option value="">Current Year</option>
-                    <option value="2024">2024</option>
-                    <option value="2025">2025</option>
-                    <option value="2026">2026</option>
-                </select>
-                <button class="btn-primary" onclick="loadWeeklyStats()" style="padding: 0.5rem 1rem; border-radius: 6px;">Load Data</button>
-                <button type="button" onclick="document.getElementById('weekly-modal').style.display='none'" style="padding: 0.5rem 1rem; border-radius: 6px; background: transparent; border: 1px solid var(--border-color); cursor: pointer;">Close</button>
-            </div>
-        </div>
-        
-        <div style="overflow-x: auto;">
-            <table class="table" style="width: 100%; text-align: left; border-collapse: collapse;">
-                <thead>
-                    <tr style="border-bottom: 2px solid var(--border-color); color: var(--text-muted); font-size: 13px;">
-                        <th style="padding: 6px 5px;">Business Unit</th>
-                        <th style="padding: 6px 5px; text-align: right;">Week 1</th>
-                        <th style="padding: 6px 5px; text-align: right;">Week 2</th>
-                        <th style="padding: 6px 5px; text-align: right;">Week 3</th>
-                        <th style="padding: 6px 5px; text-align: right;">Week 4</th>
-                        <th style="padding: 6px 5px; text-align: right;">Week 5+</th>
-                        <th style="padding: 6px 5px; text-align: right; color: var(--primary-color);">Grand Total</th>
-                    </tr>
-                </thead>
-                <tbody id="tbl-modal-weekly-recovery">
-                    <tr><td colspan="7" style="text-align: center; padding: 20px;">Load data to see weekly performance...</td></tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-
-{% endblock %}
+{% block title %}Executive Homepage{% endblock %}
+{% block page_title %}Executive Homepage{% endblock %}
 
 {% block content %}
 {% if session['user']['role'] == 'Vendor' %}
@@ -270,12 +178,148 @@
             padding-top: 15px;
             padding-bottom: 15px;
         }
+
+        /* Weekly Modal Styles */
+        .weekly-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            padding: 20px;
+        }
+        
+        .weekly-modal-content {
+            padding: 24px;
+            width: 100%;
+            max-width: 1400px;
+            max-height: 90vh;
+            overflow-y: auto;
+            background: var(--card-bg);
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+        
+        .weekly-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .weekly-modal-header h3 {
+            margin: 0;
+            color: var(--primary-color);
+            font-size: 22px;
+            font-weight: 700;
+        }
+        
+        .weekly-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .weekly-table-container {
+            overflow-x: auto;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .weekly-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        
+        .weekly-table th {
+            background: rgba(239, 68, 68, 0.08);
+            color: var(--text-muted);
+            text-align: right;
+            padding: 14px 12px;
+            font-weight: 600;
+            border-bottom: 2px solid var(--border-color);
+            white-space: nowrap;
+        }
+        
+        .weekly-table th:first-child {
+            text-align: left;
+        }
+        
+        .weekly-table th:last-child {
+            color: var(--primary-color);
+            background: rgba(243, 44, 145, 0.08);
+        }
+        
+        .weekly-table td {
+            padding: 12px 12px;
+            border-bottom: 1px solid var(--border-color);
+            text-align: right;
+            color: var(--text-color);
+        }
+        
+        .weekly-table td:first-child {
+            text-align: left;
+            font-weight: 600;
+            color: var(--text-color);
+        }
+        
+        .weekly-table td:last-child {
+            font-weight: 700;
+            color: var(--primary-color);
+            background: rgba(243, 44, 145, 0.03);
+        }
+        
+        .weekly-table tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+        
+        .weekly-amount {
+            font-weight: 600;
+            font-family: 'Inter', monospace;
+        }
+        
+        .weekly-response {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+        
+        .weekly-grand-total {
+            background: rgba(239, 68, 68, 0.08) !important;
+        }
+        
+        .weekly-grand-total td {
+            color: #ef4444 !important;
+            font-weight: 700;
+            padding-top: 16px;
+            padding-bottom: 16px;
+        }
+        
+        .weekly-grand-total td:first-child {
+            font-weight: 800;
+        }
+        
+        .weekly-grand-total td:last-child {
+            background: rgba(243, 44, 145, 0.1);
+            color: var(--primary-color) !important;
+            font-weight: 800;
+        }
         
         @media (max-width: 900px) {
             .summary-cards-container { grid-template-columns: 1fr; gap: 15px; }
             .summary-card:not(:last-child)::after { display: none; }
             .tables-container { grid-template-columns: 1fr; }
             .officers-container { grid-template-columns: 1fr !important; }
+            .weekly-modal-header { flex-direction: column; gap: 16px; align-items: flex-start; }
         }
     </style>
 
@@ -396,7 +440,7 @@
 
     <!-- View Weekly Performance Button -->
     <div style="text-align: right; margin-bottom: 10px;">
-        <button class="btn-primary" style="padding: 0.6rem 1.2rem; background: var(--primary-color); border: none; border-radius: 8px; color: white; font-weight: 600; cursor: pointer;" onclick="document.getElementById('weekly-modal').style.display='flex'">
+        <button class="btn-primary" style="padding: 0.6rem 1.2rem; background: var(--primary-color); border: none; border-radius: 8px; color: white; font-weight: 600; cursor: pointer;" onclick="openWeeklyModal()">
             <i class="fas fa-calendar-week"></i> View Weekly Performance
         </button>
     </div>
@@ -477,6 +521,17 @@ async function loadDashboardStats() {
     }
 }
 
+// Lazy load weekly data
+let weeklyModalLoaded = false;
+
+function openWeeklyModal() {
+    document.getElementById('weekly-modal').style.display = 'flex';
+    if (!weeklyModalLoaded) {
+        loadWeeklyStats();
+        weeklyModalLoaded = true;
+    }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     const today = new Date();
     document.getElementById('modalFilterMonth').value = today.getMonth() + 1;
@@ -486,13 +541,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
 async function loadWeeklyStats() {
     const tbody = document.getElementById('tbl-modal-weekly-recovery');
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Loading...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:40px; color:var(--text-muted); font-size:16px;">Loading weekly performance...</td></tr>';
     try {
         const fMonth = document.getElementById('modalFilterMonth').value;
         const fYear = document.getElementById('modalFilterYear').value;
         const queryParams = new URLSearchParams();
         if (fMonth) queryParams.append('month', fMonth);
         if (fYear) queryParams.append('year', fYear);
+        queryParams.append('type', 'weekly');
         
         const res = await fetch(`/api/dashboard-stats?${queryParams.toString()}`);
         const json = await res.json();
@@ -500,71 +556,65 @@ async function loadWeeklyStats() {
         if (json.success && json.data.weekly_breakdown) {
             let html = '';
             const buData = {};
-            // totals array to keep grand totals per column, and an overall grand total
             const grandTotals = [{amt:0, res:0}, {amt:0, res:0}, {amt:0, res:0}, {amt:0, res:0}, {amt:0, res:0}];
             let overallAmt = 0;
             let overallRes = 0;
 
             json.data.weekly_breakdown.forEach((wkObj, weekIndex) => {
-                if(weekIndex > 4) weekIndex = 4;
+                const weekIdx = Math.min(weekIndex, 4);
                 wkObj.data.forEach(item => {
                     if (!buData[item.bu]) buData[item.bu] = [{amt:0, res:0}, {amt:0, res:0}, {amt:0, res:0}, {amt:0, res:0}, {amt:0, res:0}];
-                    buData[item.bu][weekIndex].amt += item.total;
-                    buData[item.bu][weekIndex].res += (item.response || 0);
-                    
-                    grandTotals[weekIndex].amt += item.total;
-                    grandTotals[weekIndex].res += (item.response || 0);
-                    
+                    buData[item.bu][weekIdx].amt += item.total;
+                    buData[item.bu][weekIdx].res += (item.response || 0);
+                    grandTotals[weekIdx].amt += item.total;
+                    grandTotals[weekIdx].res += (item.response || 0);
                     overallAmt += item.total;
                     overallRes += (item.response || 0);
                 });
             });
             
-            for (const [bu, weeks] of Object.entries(buData)) {
-                html += `<tr style="border-bottom: 1px solid var(--border-color);">
-                    <td style="padding: 6px 5px; color: var(--text-color); font-weight: 600;">${bu}</td>`;
-                
+            const sortedBUs = Object.keys(buData).sort();
+            
+            sortedBUs.forEach(bu => {
+                const weeks = buData[bu];
                 let rowAmt = 0;
                 let rowRes = 0;
                 
+                html += `<tr>`;
+                html += `<td>${bu}</td>`;
+                
                 for(let w=0; w<5; w++) {
-                    let amtStr = weeks[w].amt ? weeks[w].amt.toLocaleString(undefined, {minimumFractionDigits: 2}) : '0.00';
-                    let resStr = weeks[w].res ? ` (${weeks[w].res} resp)` : '';
+                    let amtStr = weeks[w].amt ? `₦ ${weeks[w].amt.toLocaleString(undefined, {minimumFractionDigits: 2})}` : '₦ 0.00';
+                    let resStr = weeks[w].res ? `<div class="weekly-response">${weeks[w].res} responses</div>` : '';
                     rowAmt += weeks[w].amt;
                     rowRes += weeks[w].res;
-                    html += `<td style="padding: 6px 5px; text-align: right; font-weight: 600;"><span style="color:var(--text-color);">₦ ${amtStr}</span><br><span style="font-size:11px; color:var(--text-muted);">${resStr}</span></td>`;
+                    html += `<td><div class="weekly-amount">${amtStr}</div>${resStr}</td>`;
                 }
                 
-                // Row level grand total column
-                let rAmtStr = rowAmt.toLocaleString(undefined, {minimumFractionDigits: 2});
-                let rResStr = rowRes ? ` (${rowRes} resp)` : '';
-                html += `<td style="padding: 6px 5px; text-align: right; font-weight: 800; color: var(--primary-color);"><span style="color:var(--primary-color);">₦ ${rAmtStr}</span><br><span style="font-size:11px;">${rResStr}</span></td>`;
-                
+                html += `<td><div class="weekly-amount">₦ ${rowAmt.toLocaleString(undefined, {minimumFractionDigits: 2})}</div><div class="weekly-response">${rowRes} responses</div></td>`;
                 html += `</tr>`;
-            }
+            });
             
             // Grand Total Row
-            html += `<tr style="background: rgba(239, 68, 68, 0.05);">
-                <td style="padding: 15px 5px; color: #ef4444; font-weight: 800;">Grand Total</td>`;
+            html += `<tr class="weekly-grand-total">`;
+            html += `<td>Grand Total</td>`;
+            
             for(let w=0; w<5; w++) {
-                let amtStr = grandTotals[w].amt.toLocaleString(undefined, {minimumFractionDigits: 2});
-                let resStr = ` (${grandTotals[w].res} resp)`;
-                html += `<td style="padding: 15px 5px; text-align: right; color: #ef4444; font-weight: 800;">₦ ${amtStr}<br><span style="font-size:11px;">${resStr}</span></td>`;
+                let amtStr = `₦ ${grandTotals[w].amt.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+                let resStr = `<div class="weekly-response">${grandTotals[w].res} responses</div>`;
+                html += `<td><div class="weekly-amount">${amtStr}</div>${resStr}</td>`;
             }
             
-            // Overall Grand Total cell
-            let oAmtStr = overallAmt.toLocaleString(undefined, {minimumFractionDigits: 2});
-            let oResStr = ` (${overallRes} resp)`;
-            html += `<td style="padding: 15px 5px; text-align: right; color: var(--primary-color); font-weight: 900; background: rgba(243, 44, 145, 0.05);">₦ ${oAmtStr}<br><span style="font-size:11px;">${oResStr}</span></td>`;
-            
+            html += `<td><div class="weekly-amount">₦ ${overallAmt.toLocaleString(undefined, {minimumFractionDigits: 2})}</div><div class="weekly-response">${overallRes} responses</div></td>`;
             html += `</tr>`;
 
             tbody.innerHTML = html;
         } else {
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Failed to load data</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:40px; color:var(--text-muted);">Failed to load weekly data</td></tr>';
         }
     } catch(err) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Error loading data</td></tr>';
+        console.error("Error loading weekly stats:", err);
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:40px; color:var(--text-muted);">Error loading data</td></tr>';
     }
 }
 </script>
@@ -572,44 +622,48 @@ async function loadWeeklyStats() {
 
 
 <!-- WEEKLY PERFORMANCE MODAL -->
-<div id="weekly-modal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 9999; padding: 20px;">
-    <div class="card" style="padding: 30px; width: 100%; max-width: 1200px; max-height: 90vh; overflow-y: auto; background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <h3 style="margin: 0; color: var(--primary-color);">Weekly Performance</h3>
-            <div style="display: flex; gap: 10px;">
-                <select id="modalFilterMonth" class="form-control" style="width: auto; padding: 0.5rem; border-radius: 6px;">
+<div id="weekly-modal" class="weekly-modal-overlay">
+    <div class="weekly-modal-content">
+        <div class="weekly-modal-header">
+            <h3>📊 Weekly Performance</h3>
+            <div class="weekly-controls">
+                <select id="modalFilterMonth" class="form-control" style="width: auto; padding: 0.6rem 1rem; border-radius: 8px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); cursor: pointer;">
                     <option value="">Current Month</option>
                     <option value="1">Jan</option><option value="2">Feb</option><option value="3">Mar</option>
                     <option value="4">Apr</option><option value="5">May</option><option value="6">Jun</option>
                     <option value="7">Jul</option><option value="8">Aug</option><option value="9">Sep</option>
                     <option value="10">Oct</option><option value="11">Nov</option><option value="12">Dec</option>
                 </select>
-                <select id="modalFilterYear" class="form-control" style="width: auto; padding: 0.5rem; border-radius: 6px;">
+                <select id="modalFilterYear" class="form-control" style="width: auto; padding: 0.6rem 1rem; border-radius: 8px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); cursor: pointer;">
                     <option value="">Current Year</option>
                     <option value="2024">2024</option>
                     <option value="2025">2025</option>
                     <option value="2026">2026</option>
                 </select>
-                <button class="btn-primary" onclick="loadWeeklyStats()" style="padding: 0.5rem 1rem; border-radius: 6px;">Load Data</button>
-                <button type="button" onclick="document.getElementById('weekly-modal').style.display='none'" style="padding: 0.5rem 1rem; border-radius: 6px; background: transparent; border: 1px solid var(--border-color); cursor: pointer;">Close</button>
+                <button class="btn-primary" onclick="loadWeeklyStats()" style="padding: 0.6rem 1.2rem; border-radius: 8px;">
+                    <i class="fas fa-sync-alt"></i> Load Data
+                </button>
+                <button type="button" onclick="document.getElementById('weekly-modal').style.display='none'" style="padding: 0.6rem 1.2rem; border-radius: 8px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); cursor: pointer;">
+                    Close
+                </button>
             </div>
         </div>
         
-        <div style="overflow-x: auto;">
-            <table class="table" style="width: 100%; text-align: left; border-collapse: collapse;">
+        <div class="weekly-table-container">
+            <table class="weekly-table">
                 <thead>
-                    <tr style="border-bottom: 2px solid var(--border-color); color: var(--text-muted); font-size: 13px;">
-                        <th style="padding: 6px 5px;">Business Unit</th>
-                        <th style="padding: 6px 5px; text-align: right;">Week 1</th>
-                        <th style="padding: 6px 5px; text-align: right;">Week 2</th>
-                        <th style="padding: 6px 5px; text-align: right;">Week 3</th>
-                        <th style="padding: 6px 5px; text-align: right;">Week 4</th>
-                        <th style="padding: 6px 5px; text-align: right;">Week 5+</th>
-                        <th style="padding: 6px 5px; text-align: right; color: var(--primary-color);">Grand Total</th>
+                    <tr>
+                        <th>Business Unit</th>
+                        <th>Week 1</th>
+                        <th>Week 2</th>
+                        <th>Week 3</th>
+                        <th>Week 4</th>
+                        <th>Week 5+</th>
+                        <th>Grand Total</th>
                     </tr>
                 </thead>
                 <tbody id="tbl-modal-weekly-recovery">
-                    <tr><td colspan="7" style="text-align: center; padding: 20px;">Load data to see weekly performance...</td></tr>
+                    <tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--text-muted);">Select a month and click "Load Data" to view weekly performance</td></tr>
                 </tbody>
             </table>
         </div>

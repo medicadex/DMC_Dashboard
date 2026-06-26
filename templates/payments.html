@@ -112,16 +112,26 @@
         display: flex;
         gap: 10px;
         align-items: center;
+        flex-wrap: wrap;
     }
 
     .date-input {
         flex: 1;
-        padding: 10px;
+        min-width: 110px;
+        padding: 8px 10px;
         border-radius: 8px;
         border: 1px solid var(--border-color);
         background-color: var(--card-bg);
         color: var(--text-color);
         font-size: 13px;
+    }
+
+    /* Format Selector Styles */
+    .format-selector {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
     }
 
     .btn-process {
@@ -336,16 +346,28 @@
             </div>
         </div>
 
+        <!-- 5. Export Format -->
+        <div class="form-group">
+            <label class="form-label">5. Export Format</label>
+            <div class="format-selector">
+                <button class="format-option" id="export-excel-btn" onclick="exportPayments('xlsx', this)" style="border: 1px solid #217346; background: rgba(33, 115, 70, 0.05); color: #217346; font-weight: 600;">
+                    <i class="fas fa-file-excel"></i>
+                    <span>Excel</span>
+                </button>
+                <button class="format-option" id="export-csv-btn" onclick="exportPayments('csv', this)" style="border: 1px solid #0070C0; background: rgba(0, 112, 192, 0.05); color: #0070C0; font-weight: 600;">
+                    <i class="fas fa-file-csv"></i>
+                    <span>CSV</span>
+                </button>
+            </div>
+        </div>
+
         <!-- Action Buttons -->
         <div class="btn-process" style="gap: 15px;">
             <button class="btn-main btn-primary-web" id="processBtn" onclick="fetchPayments(true)">
                 <i class="fas fa-sync-alt"></i>
                 Process & Preview
             </button>
-            <button class="btn-main btn-primary-web" id="exportBtn" style="background-color: var(--success-color);" onclick="exportPayments()">
-                <i class="fas fa-file-excel"></i>
-                Export to Excel
-            </button>
+            <!-- Standalone export button removed as per request -->
         </div>
     </div>
 
@@ -430,6 +452,7 @@
     let currentPage = 1;
     let totalPages = 1;
     let currentPerPage = 50;
+    let selectedFormat = 'xlsx';
 
     document.addEventListener('DOMContentLoaded', () => {
         // Set default date range to current month
@@ -489,7 +512,7 @@
         bus.forEach(b => query.append('bu', b));
         types.forEach(t => query.append('type', t));
 
-        const response = await fetch(`/api/job-form/officers?${query.toString()}`);
+        const response = await fetch(`/api/job-form/officers`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: query.toString() });
         const names = await response.json();
         
         const officerList = document.getElementById('officerList');
@@ -519,6 +542,13 @@
 
     function getSelected(id) {
         return Array.from(document.querySelectorAll(`#${id} input:checked`)).map(cb => cb.value);
+    }
+
+    function selectFormat(element, format) {
+        selectedFormat = format;
+        document.querySelectorAll('.format-option').forEach(opt => opt.classList.remove('selected'));
+        element.classList.add('selected');
+        element.querySelector('input').checked = true;
     }
 
     async function fetchPayments(resetPage = false) {
@@ -551,7 +581,7 @@
             query.append('page', currentPage);
             query.append('per_page', currentPerPage);
 
-            const response = await fetch(`/api/payments/preview?${query.toString()}`);
+            const response = await fetch(`/api/payments/preview`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: query.toString() });
             const data = await response.json();
             
             if (data.error) {
@@ -645,70 +675,69 @@
         fetchPayments();
     }
 
-    async function exportPayments() {
+    async function exportPayments(formatType, btn) {
         const bus = getSelected('buList');
         const types = getSelected('typeList');
         const officers = getSelected('officerList');
         const start = document.getElementById('startDate').value;
         const end = document.getElementById('endDate').value;
-        const btn = document.getElementById('exportBtn');
 
         if (bus.length === 0 || officers.length === 0) {
-            alert("Please select filters first.");
+            alert("Please select at least one Business Unit and one Officer first.");
             return;
         }
 
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Exporting...';
-
-        try {
-            const response = await fetch('/api/payments/export', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    bu: bus,
-                    type: types,
-                    officer: officers,
-                    start: start,
-                    end: end
-                })
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                try {
-                    const errorJson = JSON.parse(errorText);
-                    throw new Error(errorJson.error || `Server error: ${response.status}`);
-                } catch (e) {
-                    throw new Error(`Server returned ${response.status}: ${errorText.substring(0, 100)}...`);
-                }
+        const allExportBtns = document.querySelectorAll('.format-option');
+        allExportBtns.forEach(b => b.disabled = true);
+        
+        // Find the icon in the clicked button and change it to a spinner (if btn exists)
+        let icon = null;
+        let originalIconClass = '';
+        if (btn) {
+            icon = btn.querySelector('i');
+            originalIconClass = icon ? icon.className : '';
+            if (icon) {
+                icon.className = 'fas fa-spinner fa-spin';
             }
-
-            // Handle file download directly from response
-            const blob = await response.blob();
-            const contentDisposition = response.headers.get('Content-Disposition');
-            let filename = 'payment_listing.xlsx';
-            if (contentDisposition) {
-                const filenameMatch = contentDisposition.match(/filename[^;=\n]*['"]?([^\n";]*)/);
-                if (filenameMatch && filenameMatch[1]) {
-                    filename = filenameMatch[1];
-                }
-            }
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            a.target = '_blank'; // Open in new tab
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-        } catch (err) {
-            alert("Error exporting: " + err.message);
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-file-excel"></i> Export to Excel';
         }
+
+        // Create a hidden form to let the browser natively handle the streamed download instantly
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/api/payments/export';
+        form.style.display = 'none';
+
+        // Add format
+        let input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'format';
+        input.value = formatType;
+        form.appendChild(input);
+
+        // Add dates
+        if (start) {
+            input = document.createElement('input'); input.type = 'hidden'; input.name = 'start'; input.value = start; form.appendChild(input);
+        }
+        if (end) {
+            input = document.createElement('input'); input.type = 'hidden'; input.name = 'end'; input.value = end; form.appendChild(input);
+        }
+
+        // Add arrays
+        bus.forEach(v => { input = document.createElement('input'); input.type = 'hidden'; input.name = 'bu'; input.value = v; form.appendChild(input); });
+        types.forEach(v => { input = document.createElement('input'); input.type = 'hidden'; input.name = 'type'; input.value = v; form.appendChild(input); });
+        officers.forEach(v => { input = document.createElement('input'); input.type = 'hidden'; input.name = 'officer'; input.value = v; form.appendChild(input); });
+
+        document.body.appendChild(form);
+        form.submit();
+
+        // Reset UI immediately so the user knows they can click again, since browser handles download in background
+        setTimeout(() => {
+            document.body.removeChild(form);
+            if (icon && originalIconClass) {
+                icon.className = originalIconClass;
+            }
+            allExportBtns.forEach(b => b.disabled = false);
+        }, 1500);
     }
 </script>
 {% endblock %}

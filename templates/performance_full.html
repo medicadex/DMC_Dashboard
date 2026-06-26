@@ -111,6 +111,10 @@
     .btn-back:hover {
         color: var(--primary-color);
     }
+
+    .format-selector {
+        margin-right: 15px;
+    }
 </style>
 {% endblock %}
 
@@ -130,15 +134,29 @@
 </div>
 
 <div class="full-table-container">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
         <div class="search-bar">
             <i class="fas fa-search"></i>
             <input type="text" id="tableSearch" placeholder="Search by name, BU or type..." onkeyup="filterTable()">
         </div>
-        <button class="btn-main btn-primary-web" style="background-color: var(--success-color);" onclick="exportTableToExcel()">
-            <i class="fas fa-file-excel"></i>
-            Export Full Report
-        </button>
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <div class="format-selector">
+                <div class="format-option selected" data-format="xlsx" onclick="selectFormat(this, 'xlsx')">
+                    <i class="fas fa-file-excel" style="color: #217346;"></i>
+                    <input type="radio" name="exportFormat" value="xlsx" checked style="display: none;">
+                    <span>Excel</span>
+                </div>
+                <div class="format-option" data-format="csv" onclick="selectFormat(this, 'csv')">
+                    <i class="fas fa-file-csv" style="color: #0070C0;"></i>
+                    <input type="radio" name="exportFormat" value="csv" style="display: none;">
+                    <span>CSV</span>
+                </div>
+            </div>
+            <button class="btn-main btn-primary-web" style="background-color: var(--success-color);" onclick="exportTable()">
+                <i class="fas fa-file-export"></i>
+                Export Full Report
+            </button>
+        </div>
     </div>
 
     <div class="table-container" style="border: none;">
@@ -167,6 +185,8 @@
 
 {% block scripts %}
 <script>
+    let selectedFormat = 'xlsx';
+
     document.addEventListener('DOMContentLoaded', () => {
         fetchFullRanking();
     });
@@ -221,36 +241,72 @@
         }
     }
 
-    async function exportTableToExcel() {
+    function selectFormat(element, format) {
+        selectedFormat = format;
+        document.querySelectorAll('.format-option').forEach(opt => opt.classList.remove('selected'));
+        element.classList.add('selected');
+        element.querySelector('input').checked = true;
+    }
+
+    async function exportTable() {
         const urlParams = new URLSearchParams(window.location.search);
         const btn = event.currentTarget;
         const originalHtml = btn.innerHTML;
-        
+
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Exporting...';
-        
+
         try {
+            const requestData = {
+                period: urlParams.get('period'),
+                otype: urlParams.get('otype'),
+                start: urlParams.get('start'),
+                end: urlParams.get('end'),
+                year: urlParams.get('year'),
+                quarter: urlParams.get('quarter'),
+                format: selectedFormat
+            };
+
             const response = await fetch('/api/performance/export', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    period: urlParams.get('period'),
-                    otype: urlParams.get('otype'),
-                    start: urlParams.get('start'),
-                    end: urlParams.get('end'),
-                    year: urlParams.get('year'),
-                    quarter: urlParams.get('quarter')
-                })
+                body: JSON.stringify(requestData)
             });
 
-            const result = await response.json();
-            if (result.success) {
-                window.location.href = `/download/${result.filename}`;
-            } else {
-                alert("Export failed: " + result.error);
+            if (!response.ok) {
+                const errorText = await response.text();
+                let errorMsg = "Unknown error";
+                try {
+                    const errorJson = JSON.parse(errorText);
+                    errorMsg = errorJson.error || errorMsg;
+                } catch (e) {
+                    errorMsg = errorText;
+                }
+                alert("Export failed: " + errorMsg);
+                return;
             }
+
+            const blob = await response.blob();
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let filename = 'performance_report.' + selectedFormat;
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename[^;=\n]*['"]?([^\n";]*)/);
+                if (filenameMatch && filenameMatch[1]) {
+                    filename = filenameMatch[1];
+                }
+            }
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.target = '_blank';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
         } catch (err) {
-            alert("Error exporting: " + err.message);
+            console.error("Export error:", err);
+            alert("Error exporting: " + (err.message || "Unknown error"));
         } finally {
             btn.disabled = false;
             btn.innerHTML = originalHtml;

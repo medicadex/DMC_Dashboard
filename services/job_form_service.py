@@ -155,12 +155,52 @@ class JobFormService:
             where_sql = f"WHERE {' AND '.join(filter_clauses)}" if filter_clauses else ""
             sql = f"SELECT COUNT(*) FROM customers c {joins} {where_sql}"
             return conn.execute(text(sql), params).scalar()
+            
+    def calculate_job_form_totals(self, filters):
+        with self.engine.connect() as conn:
+            filter_clauses, joins, params = self._get_base_query_parts(filters)
+            where_sql = f"WHERE {' AND '.join(filter_clauses)}" if filter_clauses else ""
+            
+            # Calculate totals directly in SQL
+            sql = f"""
+                SELECT 
+                    SUM(COALESCE(c.closing_balance, 0)) as closing_balance_total,
+                    SUM(COALESCE(p.total_payments, 0) + COALESCE(o.total_other, 0)) as pos_other_payments_total,
+                    SUM(COALESCE(a.total_adjustments_display, 0)) as adjustment_total,
+                    SUM(COALESCE(d.total_discounts_display, 0)) as discount_total,
+                    SUM(
+                        COALESCE(c.closing_balance, 0) - 
+                        COALESCE(p.total_payments, 0) - 
+                        COALESCE(d.total_discounts_approved, 0) - 
+                        COALESCE(a.total_adjustments_approved, 0)
+                    ) as outstanding_balance_total
+                FROM customers c 
+                {joins}
+                {where_sql}
+            """
+            
+            result = conn.execute(text(sql), params).mappings().fetchone()
+            
+            return {
+                "closing_balance": float(result["closing_balance_total"]) if result["closing_balance_total"] is not None else 0.0,
+                "pos_other_payments": float(result["pos_other_payments_total"]) if result["pos_other_payments_total"] is not None else 0.0,
+                "adjustment": float(result["adjustment_total"]) if result["adjustment_total"] is not None else 0.0,
+                "discount": float(result["discount_total"]) if result["discount_total"] is not None else 0.0,
+                "outstanding_balance": float(result["outstanding_balance_total"]) if result["outstanding_balance_total"] is not None else 0.0
+            }
 
-    def get_job_form_data(self, filters, out_cols):
+    def get_job_form_data(self, filters, out_cols, page=1, per_page=None):
         import pandas as pd
         with self.engine.connect() as conn:
             filter_clauses, joins, params = self._get_base_query_parts(filters)
             where_sql = f"WHERE {' AND '.join(filter_clauses)}" if filter_clauses else ""
+            
+            # Add pagination clause if per_page is provided
+            pagination_clause = ""
+            if per_page is not None and per_page > 0:
+                offset = (page - 1) * per_page
+                pagination_clause = f"LIMIT {per_page} OFFSET {offset}"
+            
             sql = f"""
                 SELECT 
                     c.*, 
@@ -174,6 +214,7 @@ class JobFormService:
                 FROM customers c 
                 {joins}
                 {where_sql}
+                {pagination_clause}
             """
             df = pd.read_sql(text(sql), conn, params=params)
             

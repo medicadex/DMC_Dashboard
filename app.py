@@ -750,6 +750,37 @@ def admin_update_staff(user_id):
         logger.error(f"Failed to update staff record: {e}", exc_info=True)
         return jsonify({'success': False, 'message': f'Error updating staff: {str(e)}'}), 500
 
+@app.route('/api/admin/staff/delete/<int:user_id>', methods=['POST'])
+@login_required
+def admin_delete_staff(user_id):
+    if session['user'].get('role') != 'Admin':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    try:
+        with engine.connect() as conn:
+            staff_info = conn.execute(text("SELECT username, staff_id, first_name, surname FROM staff WHERE id = :uid"), {"uid": user_id}).fetchone()
+
+        if not staff_info:
+            return jsonify({'success': False, 'message': 'Staff member not found.'}), 404
+
+        # Protect currently logged-in user from self-deletion
+        current_username = session.get('user', {}).get('username', '')
+        if staff_info[0] and current_username and staff_info[0].lower() == current_username.lower():
+            return jsonify({'success': False, 'message': 'You cannot delete your own logged-in admin account.'}), 400
+
+        staff_repo.delete_staff(user_id)
+
+        staff_repo.log_activity(
+            current_username, "STAFF_DELETED",
+            f"Permanently deleted staff member: {staff_info[0]} (Staff ID: {staff_info[1]}, Name: {staff_info[2]} {staff_info[3]})",
+            event_type='MAJOR'
+        )
+
+        return jsonify({'success': True, 'message': 'Staff profile deleted successfully.'})
+    except Exception as e:
+        logger.error(f"Failed to delete staff record: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': f'Error deleting staff: {str(e)}'}), 500
+
 @app.route('/api/staff/bulk-upload', methods=['POST'])
 @login_required
 def bulk_upload_staff():

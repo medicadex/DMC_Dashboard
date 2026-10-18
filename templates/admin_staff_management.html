@@ -354,11 +354,23 @@
         
         <!-- MODIFY USER -->
         <div id="section-modify" class="admin-section" style="display: none;">
-            <div class="section-header">
-                <h3>Modify Existing Staff</h3>
-                <button class="btn-submit" style="padding: 8px 15px; font-size: 13px;" onclick="loadAllStaff()">
-                    <i class="fas fa-sync-alt"></i> Refresh List
-                </button>
+            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 20px;">
+                <div>
+                    <h3 style="margin-bottom: 4px;">Modify Existing Staff</h3>
+                    <p style="margin: 0; font-size: 13px; color: var(--text-muted);" id="staffListCount">Loading staff records...</p>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <div style="position: relative; width: 340px; max-width: 100%;">
+                        <i class="fas fa-search" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 13px; pointer-events: none;"></i>
+                        <input type="text" id="staffGlobalSearch" class="form-control" style="padding-left: 38px; padding-right: 32px; height: 38px; font-size: 13px; border-radius: 8px;" placeholder="Search Staff ID, Name, Username, BU, Role..." oninput="handleStaffSearch()">
+                        <button type="button" id="staffSearchClear" onclick="clearStaffSearch()" style="display: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 2px 6px; font-size: 12px;" title="Clear search">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <button class="btn-submit" style="padding: 8px 15px; font-size: 13px; height: 38px;" onclick="loadAllStaff()">
+                        <i class="fas fa-sync-alt"></i> Refresh List
+                    </button>
+                </div>
             </div>
             
             <div style="overflow-x: auto;">
@@ -463,13 +475,75 @@
                 </div>
             </div>
             
-            <div style="text-align: right; margin-top: 20px;">
-                <button type="button" onclick="closeModifyModal()" class="btn-submit" style="background: rgba(0,0,0,0.05); color: var(--text-color); margin-right: 10px;">Cancel</button>
-                <button type="submit" class="btn-submit" id="modifySubmitBtn">Save Changes</button>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+                <button type="button" onclick="openDeleteStaffModalFromEdit()" class="btn-submit" style="background: rgba(239, 68, 68, 0.12); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.25); padding: 8px 16px; font-size: 13px;">
+                    <i class="fas fa-trash-alt"></i> Delete Profile
+                </button>
+                <div>
+                    <button type="button" onclick="closeModifyModal()" class="btn-submit" style="background: rgba(0,0,0,0.05); color: var(--text-color); margin-right: 10px; padding: 8px 16px; font-size: 13px;">Cancel</button>
+                    <button type="submit" class="btn-submit" id="modifySubmitBtn" style="padding: 8px 20px; font-size: 13px;">Save Changes</button>
+                </div>
             </div>
         </form>
     </div>
 </div>
+</div>
+
+<!-- Delete Staff Profile Security Modal -->
+<div id="deleteStaffModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); z-index: 10001; align-items: center; justify-content: center;">
+    <div style="background: var(--card-bg); width: 520px; max-width: 95%; border-radius: 12px; padding: 28px; box-shadow: 0 15px 45px rgba(0,0,0,0.3); border: 1px solid var(--border-color);">
+        <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 18px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px;">
+            <div style="width: 44px; height: 44px; border-radius: 10px; background: rgba(239, 68, 68, 0.12); color: #ef4444; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0;">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <div>
+                <h3 style="margin: 0; font-size: 18px; font-weight: 700; color: var(--text-color);">Delete Member Profile</h3>
+                <p style="margin: 2px 0 0 0; font-size: 12px; color: var(--text-muted);">Permanent removal of staff account and credentials</p>
+            </div>
+        </div>
+
+        <!-- Security Prompt / Non-reversible Warning -->
+        <div style="background: rgba(239, 68, 68, 0.08); border-left: 4px solid #ef4444; border-radius: 6px; padding: 14px 16px; margin-bottom: 20px;">
+            <div style="font-weight: 700; color: #ef4444; margin-bottom: 4px; font-size: 13px; display: flex; align-items: center; gap: 6px;">
+                <i class="fas fa-shield-alt"></i> Security Prompt — Action Irreversible
+            </div>
+            <p style="margin: 0; font-size: 13px; color: var(--text-color); line-height: 1.5;">
+                This action is <strong>not reversible</strong>. The profile, credentials, and access permissions will be permanently deleted. The staff member can only regain access by <strong>re-registering</strong>.
+            </p>
+        </div>
+
+        <!-- Member Profile Details Card -->
+        <div style="background: rgba(0,0,0,0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 14px 16px; margin-bottom: 24px; font-size: 13px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div>
+                    <span style="color: var(--text-muted); font-size: 11px; text-transform: uppercase; font-weight: 600; display: block;">Full Name</span>
+                    <strong id="del_staff_name" style="color: var(--text-color); font-size: 14px;">--</strong>
+                </div>
+                <div>
+                    <span style="color: var(--text-muted); font-size: 11px; text-transform: uppercase; font-weight: 600; display: block;">Staff ID</span>
+                    <strong id="del_staff_id" style="color: var(--text-color); font-size: 14px;">--</strong>
+                </div>
+                <div>
+                    <span style="color: var(--text-muted); font-size: 11px; text-transform: uppercase; font-weight: 600; display: block;">Username</span>
+                    <span id="del_staff_username" style="color: var(--text-color);">--</span>
+                </div>
+                <div>
+                    <span style="color: var(--text-muted); font-size: 11px; text-transform: uppercase; font-weight: 600; display: block;">Business Unit / Role</span>
+                    <span style="color: var(--text-color);"><span id="del_staff_bu">--</span> (<span id="del_staff_role">--</span>)</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div style="display: flex; justify-content: flex-end; gap: 12px; align-items: center;">
+            <button type="button" onclick="closeDeleteStaffModal()" class="btn-submit" style="background: rgba(0,0,0,0.05); color: var(--text-color); padding: 9px 18px; font-weight: 600;">
+                Cancel
+            </button>
+            <button type="button" id="btnConfirmDeleteStaff" onclick="executeDeleteStaff()" class="btn-submit" style="background: #ef4444; color: #ffffff; border: none; padding: 9px 20px; font-weight: 600;">
+                <i class="fas fa-trash-alt"></i> Delete Profile Permanently
+            </button>
+        </div>
+    </div>
 </div>
 
 <!-- Review Pending Update Modal -->
@@ -750,32 +824,177 @@ async function loadAllStaff() {
         
         if (data.success) {
             allStaffData = data.data;
-            tbody.innerHTML = '';
-            if (data.data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 30px; color: var(--text-muted);">No staff records found.</td></tr>';
-                return;
+            const searchInput = document.getElementById('staffGlobalSearch');
+            if (searchInput && searchInput.value.trim()) {
+                handleStaffSearch();
+            } else {
+                renderStaffTable(allStaffData);
             }
-            
-            data.data.forEach(staff => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td style="font-weight: 600;">${staff.staff_id || '--'}</td>
-                    <td>${(staff.first_name || '') + ' ' + (staff.surname || '')}</td>
-                    <td>${staff.username}</td>
-                    <td><span class="badge" style="background: rgba(0,0,0,0.05); color: var(--text-color);">${staff.role}</span></td>
-                    <td>${staff.business_unit || '--'}</td>
-                    <td style="color: var(--text-muted); font-size: 12px;">${staff.last_online_login ? new Date(staff.last_online_login).toLocaleString() : 'Never'}</td>
-                    <td style="text-align: center;">
-                        <button class="btn-submit" style="padding: 6px 12px; font-size: 12px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--border-color);" onclick="openModifyModal(${staff.id})">
-                            <i class="fas fa-edit"></i> Modify
-                        </button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
         }
     } catch (e) {
         tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--danger-color); padding: 30px;">Failed to load staff records.</td></tr>';
+    }
+}
+
+function renderStaffTable(staffList) {
+    const tbody = document.getElementById('all-staff-tbody');
+    const countEl = document.getElementById('staffListCount');
+    tbody.innerHTML = '';
+    
+    if (countEl) {
+        if (!allStaffData || allStaffData.length === 0) {
+            countEl.textContent = 'No staff records';
+        } else if (staffList.length === allStaffData.length) {
+            countEl.textContent = `All ${allStaffData.length} registered staff members`;
+        } else {
+            countEl.textContent = `Showing ${staffList.length} of ${allStaffData.length} staff members`;
+        }
+    }
+
+    if (staffList.length === 0) {
+        const query = document.getElementById('staffGlobalSearch') ? document.getElementById('staffGlobalSearch').value.trim() : '';
+        const msg = query ? `No staff members found matching "${query}".` : 'No staff records found.';
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 30px; color: var(--text-muted);"><i class="fas fa-info-circle"></i> ${msg}</td></tr>`;
+        return;
+    }
+
+    staffList.forEach(staff => {
+        const tr = document.createElement('tr');
+        const fullName = ((staff.first_name || '') + ' ' + (staff.surname || '')).trim() || staff.name_official || '--';
+        tr.innerHTML = `
+            <td style="font-weight: 600;">${staff.staff_id || '--'}</td>
+            <td>${fullName}</td>
+            <td>${staff.username || '--'}</td>
+            <td><span class="badge" style="background: rgba(0,0,0,0.05); color: var(--text-color);">${staff.role || 'User'}</span></td>
+            <td>${staff.business_unit || '--'}</td>
+            <td style="color: var(--text-muted); font-size: 12px;">${staff.last_online_login ? new Date(staff.last_online_login).toLocaleString() : 'Never'}</td>
+            <td style="text-align: center; white-space: nowrap;">
+                <button class="btn-submit" style="padding: 6px 12px; font-size: 12px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--border-color); margin-right: 6px;" onclick="openModifyModal(${staff.id})">
+                    <i class="fas fa-edit"></i> Modify
+                </button>
+                <button class="btn-submit" style="padding: 6px 12px; font-size: 12px; background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.25);" onclick="openDeleteStaffModal(${staff.id})">
+                    <i class="fas fa-trash-alt"></i> Delete
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function handleStaffSearch() {
+    const input = document.getElementById('staffGlobalSearch');
+    const clearBtn = document.getElementById('staffSearchClear');
+    const query = input ? input.value.trim().toLowerCase() : '';
+    
+    if (clearBtn) {
+        clearBtn.style.display = query ? 'block' : 'none';
+    }
+
+    if (!query) {
+        renderStaffTable(allStaffData);
+        return;
+    }
+
+    const filtered = allStaffData.filter(s => {
+        const sid = (s.staff_id || '').toLowerCase();
+        const uname = (s.username || '').toLowerCase();
+        const fname = (s.first_name || '').toLowerCase();
+        const sname = (s.surname || '').toLowerCase();
+        const fullname = `${fname} ${sname}`.trim();
+        const no = (s.name_official || '').toLowerCase();
+        const bu = (s.business_unit || '').toLowerCase();
+        const role = (s.role || '').toLowerCase();
+        const otype = (s.officer_type || '').toLowerCase();
+        const email = (s.email || '').toLowerCase();
+
+        return sid.includes(query) ||
+               uname.includes(query) ||
+               fullname.includes(query) ||
+               no.includes(query) ||
+               bu.includes(query) ||
+               role.includes(query) ||
+               otype.includes(query) ||
+               email.includes(query);
+    });
+
+    renderStaffTable(filtered);
+}
+
+function clearStaffSearch() {
+    const input = document.getElementById('staffGlobalSearch');
+    if (input) {
+        input.value = '';
+    }
+    handleStaffSearch();
+}
+
+let staffToDeleteId = null;
+
+function openDeleteStaffModal(id) {
+    const staff = allStaffData.find(s => s.id === id);
+    if (!staff) return;
+
+    staffToDeleteId = id;
+    const fullName = ((staff.first_name || '') + ' ' + (staff.surname || '')).trim() || staff.name_official || 'Unknown';
+
+    document.getElementById('del_staff_name').textContent = fullName;
+    document.getElementById('del_staff_id').textContent = staff.staff_id || '--';
+    document.getElementById('del_staff_username').textContent = staff.username || '--';
+    document.getElementById('del_staff_bu').textContent = staff.business_unit || 'Unassigned';
+    document.getElementById('del_staff_role').textContent = staff.role || 'User';
+
+    document.getElementById('deleteStaffModal').style.display = 'flex';
+}
+
+function openDeleteStaffModalFromEdit() {
+    const id = parseInt(document.getElementById('m_userid').value, 10);
+    closeModifyModal();
+    if (id) {
+        openDeleteStaffModal(id);
+    }
+}
+
+function closeDeleteStaffModal() {
+    document.getElementById('deleteStaffModal').style.display = 'none';
+    staffToDeleteId = null;
+}
+
+async function executeDeleteStaff() {
+    if (!staffToDeleteId) return;
+
+    const btn = document.getElementById('btnConfirmDeleteStaff');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting Profile...';
+
+    try {
+        const res = await fetch(`/api/admin/staff/delete/${staffToDeleteId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        let data;
+        try {
+            data = await res.json();
+        } catch (parseErr) {
+            if (res.status === 404) {
+                throw new Error('Endpoint not found (404). Please ensure the Flask app server is restarted to load the latest backend routes.');
+            }
+            throw new Error(`Server returned HTTP ${res.status}: ${res.statusText}`);
+        }
+
+        if (data.success) {
+            closeDeleteStaffModal();
+            allStaffData = allStaffData.filter(s => s.id !== staffToDeleteId);
+            handleStaffSearch();
+            alert('Staff profile deleted successfully. The staff member can now only re-register.');
+        } else {
+            alert(`Error: ${data.message}`);
+        }
+    } catch (err) {
+        alert(err.message || 'Network error while deleting staff profile.');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-trash-alt"></i> Delete Profile Permanently';
     }
 }
 

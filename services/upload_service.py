@@ -25,10 +25,34 @@ UPSERT_TABLES = {'customers', 'performance_config', 'staff', 'discounts', 'adjus
 IGNORE_TABLES = {'collections', 'other_payments', 'validation', 'disconnections'}
 
 
+from datetime import datetime, date
+
 def _generate_transaction_id(row: pd.Series, table_name: str) -> str:
     """Deterministic MD5 hash used as the unique deduplication key per table."""
     def safe(val):
-        return str(val).strip().lower() if pd.notnull(val) else ""
+        if pd.isnull(val):
+            return ""
+        if isinstance(val, (pd.Timestamp, datetime, date)):
+            return val.strftime('%Y-%m-%d')
+        s = str(val).strip()
+        if not s or s.lower() in ('nan', 'none', 'null'):
+            return ""
+        if '-' in s or '/' in s:
+            try:
+                dt = pd.to_datetime(s, errors='coerce')
+                if pd.notnull(dt):
+                    return dt.strftime('%Y-%m-%d')
+            except Exception:
+                pass
+        try:
+            f = float(s.replace(',', ''))
+            if f.is_integer():
+                s = str(int(f))
+            else:
+                s = f"{f:.2f}"
+        except Exception:
+            pass
+        return s.lower()
 
     if table_name == 'collections':
         base = f"{safe(row.get('account_number'))}_{safe(row.get('date_of_payment'))}_{safe(row.get('amount_paid'))}"
@@ -43,7 +67,6 @@ def _generate_transaction_id(row: pd.Series, table_name: str) -> str:
             f"{safe(row.get('account_number'))}_"
             f"{safe(row.get('date_applied'))}_"
             f"{safe(row.get('discounted_amount'))}_"
-            f"{safe(row.get('percentage_discount'))}_"
             f"{safe(row.get('user_who_raised'))}_"
             f"{safe(row.get('business_unit'))}_"
             f"{safe(row.get('undertaking'))}"
@@ -55,8 +78,7 @@ def _generate_transaction_id(row: pd.Series, table_name: str) -> str:
             f"{safe(row.get('adjustment_amount'))}_"
             f"{safe(row.get('user_who_raised_adjustment'))}_"
             f"{safe(row.get('business_unit'))}_"
-            f"{safe(row.get('undertaking'))}_"
-            f"{safe(row.get('remark'))}"
+            f"{safe(row.get('undertaking'))}"
         )
     elif table_name == 'resolutions':
         base = f"{safe(row.get('account_number'))}_{safe(row.get('resolution_date'))}"
@@ -389,18 +411,21 @@ class UploadService:
         try:
             df_mapped = self._load_and_map_dataframe(table_name, filepath)
             
-            # Detect officer changes programmatically before writing to DB
+            # Detect officer changes & unmatched staff programmatically before writing to DB
             officer_changes = {}
+            unmatched_officers = []
             if table_name.lower() in ['customers', 'accounts']:
                 try:
                     from services.account_service import AccountService
                     account_service = AccountService(self.engine, self.repo, None)
                     officer_changes = account_service.detect_officer_changes_in_df(df_mapped)
+                    unmatched_officers = account_service.detect_unmatched_officers_in_df(df_mapped)
                 except Exception as e:
-                    logging.error(f"Error detecting officer changes programmatically in web: {e}")
+                    logging.error(f"Error detecting officer changes/unmatched staff programmatically in web: {e}")
                     
             result = self._push_to_rds(table_name, df_mapped, chunk_size=chunk_size, progress_callback=progress_callback)
             result['officer_changes'] = officer_changes
+            result['unmatched_officers'] = unmatched_officers
 
             self.repo.log_activity(
                 username, "UPLOAD_SUCCESS",

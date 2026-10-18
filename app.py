@@ -179,6 +179,11 @@ engine = get_db_engine()
 def initialize_database_views():
     """Creates or replaces necessary database views (all_payments, account_financial_summary)."""
     try:
+        with engine.connect() as conn:
+            check_view = conn.execute(text("SELECT 1 FROM information_schema.views WHERE table_name = 'account_financial_summary'")).fetchone()
+            if check_view:
+                logger.info("Database views already initialized.")
+                return
         with engine.begin() as conn:
             # Create all_payments view: union of collections and other_payments
             conn.execute(text("""
@@ -811,6 +816,101 @@ def bulk_upload_staff():
         except Exception as e:
             return jsonify({'success': False, 'message': f'Error processing file: {str(e)}'}), 500
 
+@app.route('/api/staff/register-unmatched-officers', methods=['POST'])
+@login_required
+def register_unmatched_officers():
+    """
+    Registers unmatched recovery officers into the staff table,
+    and updates customers (and customer_officer_history) with the new staff_id and officer_type.
+    """
+    if session.get('user', {}).get('role') != 'Admin':
+        return jsonify({'success': False, 'message': 'Admin access required.'}), 403
+
+    data = request.get_json() or {}
+    officers = data.get('officers', [])
+
+    if not officers:
+        return jsonify({'success': False, 'message': 'No officers provided.'}), 400
+
+    registered_count = 0
+    updated_accounts_count = 0
+
+    try:
+        with engine.begin() as conn:
+            for item in officers:
+                off_name = str(item.get('officer_name', '')).strip()
+                sid = str(item.get('staff_id', '')).strip()
+                otype = str(item.get('officer_type', 'DMO')).strip() or 'DMO'
+                bu = str(item.get('business_unit', '')).strip()
+
+                if not off_name or not sid:
+                    continue
+
+                parts = off_name.split()
+                fname = parts[0] if parts else off_name
+                sname = " ".join(parts[1:]) if len(parts) > 1 else ""
+
+                uname = sid.lower()
+                phash = SecurityManager.hash_password(sid)
+
+                staff_upsert_sql = text("""
+                    INSERT INTO staff (
+                        staff_id, username, first_name, surname, name_official, 
+                        officer_type, business_unit, role, password_hash, status, sync_status
+                    )
+                    VALUES (
+                        :sid, :uname, :fname, :sname, :no, 
+                        :ot, :bu, 'User', :phash, 'Active', 'SYNCED'
+                    )
+                    ON CONFLICT (staff_id) DO UPDATE SET
+                        first_name = CASE WHEN EXCLUDED.first_name != '' THEN EXCLUDED.first_name ELSE staff.first_name END,
+                        surname = CASE WHEN EXCLUDED.surname != '' THEN EXCLUDED.surname ELSE staff.surname END,
+                        name_official = CASE WHEN EXCLUDED.name_official != '' THEN EXCLUDED.name_official ELSE staff.name_official END,
+                        officer_type = :ot,
+                        business_unit = CASE WHEN :bu != '' THEN :bu ELSE staff.business_unit END,
+                        sync_status = 'SYNCED';
+                """)
+                conn.execute(staff_upsert_sql, {
+                    'sid': sid, 'uname': uname, 'fname': fname, 'sname': sname, 'no': off_name,
+                    'ot': otype, 'bu': bu, 'phash': phash
+                })
+
+                cust_update_sql = text("""
+                    UPDATE customers 
+                    SET staff_id = :sid, officer_type = :ot
+                    WHERE account_officer = :off_name
+                """)
+                res_cust = conn.execute(cust_update_sql, {
+                    'sid': sid, 'ot': otype, 'off_name': off_name
+                })
+                updated_accounts_count += res_cust.rowcount
+
+                coh_update_sql = text("""
+                    UPDATE customer_officer_history 
+                    SET staff_id = :sid, officer_type = :ot
+                    WHERE account_officer = :off_name
+                """)
+                conn.execute(coh_update_sql, {
+                    'sid': sid, 'ot': otype, 'off_name': off_name
+                })
+
+                registered_count += 1
+
+        staff_repo.log_activity(
+            session['user']['username'], "STAFF_UNMATCHED_REGISTERED",
+            f"Registered {registered_count} staff profiles. Synced {updated_accounts_count} customer accounts.",
+            event_type='MAJOR'
+        )
+
+        return jsonify({
+            'success': True,
+            'message': f'Successfully registered {registered_count} officer(s) and synced {updated_accounts_count:,} customer account(s).'
+        })
+
+    except Exception as e:
+        logger.error(f"Error registering unmatched officers: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': f"Database error: {str(e)}"}), 500
+
 @app.route('/admin/upload-tables', methods=['GET', 'POST'])
 @login_required
 def admin_upload_tables():
@@ -851,12 +951,13 @@ def admin_upload_tables():
                         table_name, filepath, session['user']['username']
                     )
                 results.append({
-                    "table":      table_name,
-                    "total":      result.get('total', 0),
-                    "new":        result.get('new', 0),
-                    "duplicates": result.get('duplicates', 0),
-                    "officer_changes": result.get('officer_changes', {}),
-                    "status":     "success"
+                    "table":              table_name,
+                    "total":              result.get('total', 0),
+                    "new":                result.get('new', 0),
+                    "duplicates":         result.get('duplicates', 0),
+                    "officer_changes":    result.get('officer_changes', {}),
+                    "unmatched_officers": result.get('unmatched_officers', []),
+                    "status":             "success"
                 })
             except Exception as e:
                 logger.error(f"Admin upload failed for '{table_name}': {e}", exc_info=True)
@@ -2418,7 +2519,7 @@ def api_payments_export():
         logger.error(f"Payment Export Error: {e}", exc_info=True)
         return jsonify({"error": f"An internal error occurred while exporting the payments report: {str(e)}"}), 500
 
-@app.route('/api/customers/preview')
+@app.route('/api/customers/preview', methods=['GET', 'POST'])
 @login_required
 def api_customers_preview():
     bus = request.values.getlist('bu')
@@ -2447,14 +2548,50 @@ def api_customers_preview():
         })
 
     try:
-        # Calculate Grand Totals and Total Rows using precomputed account_financial_summary (faster!)
+        # Calculate Grand Totals and Total Rows with filtered subqueries (fast & no view timeout!)
         count_sql = text("""
             SELECT 
                 COUNT(*) as total_rows,
-                SUM(COALESCE(afs.total_payments, 0)) as sum_payments,
-                SUM(COALESCE(afs.outstanding_balance, 0)) as sum_outstanding
+                SUM(COALESCE(c.closing_balance, 0)) as sum_closing,
+                SUM(COALESCE(p.total_payments, 0)) as sum_payments,
+                SUM(COALESCE(d.total_discounts, 0)) as sum_discounts,
+                SUM(COALESCE(a.total_adjustments, 0)) as sum_adjustments
             FROM customers c
-            LEFT JOIN account_financial_summary afs ON c.account_number = afs.account_number
+            LEFT JOIN (
+                SELECT account_number, SUM(amount_paid) as total_payments
+                FROM all_payments
+                WHERE account_number IN (
+                    SELECT account_number FROM customers 
+                    WHERE business_unit = ANY(:bus)
+                    AND officer_type = ANY(:otypes)
+                    AND account_officer = ANY(:onames)
+                )
+                GROUP BY account_number
+            ) p ON c.account_number = p.account_number
+            LEFT JOIN (
+                SELECT account_number, SUM(discounted_amount) as total_discounts
+                FROM discounts
+                WHERE (LOWER(status) = 'approved' OR LOWER(user_who_approved) LIKE '%okoye%' OR LOWER(user_who_approved) LIKE '%forstinus%')
+                AND account_number IN (
+                    SELECT account_number FROM customers 
+                    WHERE business_unit = ANY(:bus)
+                    AND officer_type = ANY(:otypes)
+                    AND account_officer = ANY(:onames)
+                )
+                GROUP BY account_number
+            ) d ON c.account_number = d.account_number
+            LEFT JOIN (
+                SELECT account_number, SUM(adjustment_amount) as total_adjustments
+                FROM adjustments
+                WHERE (LOWER(status) = 'approved' OR LOWER(user_who_approved_adjustment) LIKE '%okoye%' OR LOWER(user_who_approved_adjustment) LIKE '%forstinus%')
+                AND account_number IN (
+                    SELECT account_number FROM customers 
+                    WHERE business_unit = ANY(:bus)
+                    AND officer_type = ANY(:otypes)
+                    AND account_officer = ANY(:onames)
+                )
+                GROUP BY account_number
+            ) a ON c.account_number = a.account_number
             WHERE c.business_unit = ANY(:bus)
             AND c.officer_type = ANY(:otypes)
             AND c.account_officer = ANY(:onames)
@@ -2468,11 +2605,15 @@ def api_customers_preview():
             }
             count_res = conn.execute(count_sql, params_dict_cust).fetchone()
             total_rows = int(count_res[0]) if count_res and count_res[0] else 0
-            total_payments_global = float(count_res[1]) if count_res and count_res[1] else 0.0
-            total_outstanding_global = float(count_res[2]) if count_res and count_res[2] else 0.0
+            sum_closing = float(count_res[1]) if count_res and count_res[1] else 0.0
+            sum_payments = float(count_res[2]) if count_res and count_res[2] else 0.0
+            sum_discounts = float(count_res[3]) if count_res and count_res[3] else 0.0
+            sum_adjustments = float(count_res[4]) if count_res and count_res[4] else 0.0
+            
+            total_outstanding_global = sum_closing - sum_payments - sum_discounts - sum_adjustments
 
         totals = {
-            "total_payments": total_payments_global,
+            "total_payments": sum_payments,
             "outstanding_balance": total_outstanding_global
         }
         if per_page_arg.lower() == 'all':
@@ -2486,7 +2627,7 @@ def api_customers_preview():
             offset = (page - 1) * per_page
             limit_clause = f" LIMIT {per_page} OFFSET {offset}"
 
-        # Complex query to get all requested fields using precomputed account_financial_summary (way faster!)
+        # Complex query to get all requested fields using pushdown subqueries (ultra-fast!)
         sql = text(f"""
             SELECT 
                 c.account_number, 
@@ -2497,14 +2638,70 @@ def api_customers_preview():
                 c.account_officer, 
                 c.feeder as feeder_name,
                 c.dt_name,
-                (SELECT phone_number FROM validation WHERE account_number = c.account_number ORDER BY id DESC LIMIT 1) as phone_number,
+                v_phone.phone_number,
                 c.closing_balance,
-                COALESCE(afs.total_payments, 0) as total_payments,
-                COALESCE(afs.total_discounts, 0) as total_discounts_approved,
-                COALESCE(afs.total_adjustments, 0) as total_adjustments_approved,
-                (SELECT MAX(date_of_payment) FROM collections WHERE account_number = c.account_number) as last_payment_date
+                COALESCE(p.total_payments, 0) as total_payments,
+                COALESCE(d.total_discounts, 0) as total_discounts_approved,
+                COALESCE(a.total_adjustments, 0) as total_adjustments_approved,
+                col_max.last_payment_date
             FROM customers c
-            LEFT JOIN account_financial_summary afs ON c.account_number = afs.account_number
+            LEFT JOIN (
+                SELECT account_number, SUM(amount_paid) as total_payments
+                FROM all_payments
+                WHERE account_number IN (
+                    SELECT account_number FROM customers 
+                    WHERE business_unit = ANY(:bus)
+                    AND officer_type = ANY(:otypes)
+                    AND account_officer = ANY(:onames)
+                )
+                GROUP BY account_number
+            ) p ON c.account_number = p.account_number
+            LEFT JOIN (
+                SELECT account_number, SUM(discounted_amount) as total_discounts
+                FROM discounts
+                WHERE (LOWER(status) = 'approved' OR LOWER(user_who_approved) LIKE '%okoye%' OR LOWER(user_who_approved) LIKE '%forstinus%')
+                AND account_number IN (
+                    SELECT account_number FROM customers 
+                    WHERE business_unit = ANY(:bus)
+                    AND officer_type = ANY(:otypes)
+                    AND account_officer = ANY(:onames)
+                )
+                GROUP BY account_number
+            ) d ON c.account_number = d.account_number
+            LEFT JOIN (
+                SELECT account_number, SUM(adjustment_amount) as total_adjustments
+                FROM adjustments
+                WHERE (LOWER(status) = 'approved' OR LOWER(user_who_approved_adjustment) LIKE '%okoye%' OR LOWER(user_who_approved_adjustment) LIKE '%forstinus%')
+                AND account_number IN (
+                    SELECT account_number FROM customers 
+                    WHERE business_unit = ANY(:bus)
+                    AND officer_type = ANY(:otypes)
+                    AND account_officer = ANY(:onames)
+                )
+                GROUP BY account_number
+            ) a ON c.account_number = a.account_number
+            LEFT JOIN (
+                SELECT DISTINCT ON (account_number) account_number, phone_number 
+                FROM validation 
+                WHERE account_number IN (
+                    SELECT account_number FROM customers 
+                    WHERE business_unit = ANY(:bus)
+                    AND officer_type = ANY(:otypes)
+                    AND account_officer = ANY(:onames)
+                )
+                ORDER BY account_number, id DESC
+            ) v_phone ON c.account_number = v_phone.account_number
+            LEFT JOIN (
+                SELECT account_number, MAX(date_of_payment) as last_payment_date 
+                FROM collections 
+                WHERE account_number IN (
+                    SELECT account_number FROM customers 
+                    WHERE business_unit = ANY(:bus)
+                    AND officer_type = ANY(:otypes)
+                    AND account_officer = ANY(:onames)
+                )
+                GROUP BY account_number
+            ) col_max ON c.account_number = col_max.account_number
             WHERE c.business_unit = ANY(:bus)
             AND c.officer_type = ANY(:otypes)
             AND c.account_officer = ANY(:onames)
@@ -2567,7 +2764,7 @@ def api_customers_export():
         return jsonify({"error": "Missing filters"}), 400
 
     try:
-        # Optimized SQL using precomputed account_financial_summary view (way faster!)
+        # Optimized SQL using pushdown subqueries (ultra-fast & no timeout!)
         sql = text("""
             SELECT 
                 c.account_number as "Account Number", 
@@ -2578,16 +2775,77 @@ def api_customers_export():
                 c.account_officer as "Account Officer", 
                 c.feeder as "Feeder Name",
                 c.dt_name as "DT Name",
-                (SELECT phone_number FROM validation WHERE account_number = c.account_number ORDER BY id DESC LIMIT 1) as "Phone Number",
+                v_phone.phone_number as "Phone Number",
                 COALESCE(c.closing_balance, 0) as "Closing Balance",
-                COALESCE(afs.total_payments, 0) as "Total Payments",
-                COALESCE(afs.total_discounts, 0) as "Valid Discount Amount",
-                COALESCE(afs.total_adjustments, 0) as "Valid Adjustment Amount",
-                COALESCE(afs.outstanding_balance, 0) as "Outstanding Balance",
-                (SELECT MAX(date_of_payment) FROM collections WHERE account_number = c.account_number) as "Last Payment Date",
-                COALESCE(afs.payment_plan, 'No') as "Current Payment-Plan Status"
+                COALESCE(p.total_payments, 0) as "Total Payments",
+                COALESCE(d.total_discounts, 0) as "Valid Discount Amount",
+                COALESCE(a.total_adjustments, 0) as "Valid Adjustment Amount",
+                (COALESCE(c.closing_balance, 0) - COALESCE(p.total_payments, 0) - COALESCE(d.total_discounts, 0) - COALESCE(a.total_adjustments, 0)) as "Outstanding Balance",
+                col_max.last_payment_date as "Last Payment Date",
+                CASE 
+                    WHEN (COALESCE(p.total_payments, 0) >= 0.3 * COALESCE(c.closing_balance, 0)) 
+                    AND ((COALESCE(c.closing_balance, 0) - COALESCE(p.total_payments, 0) - COALESCE(d.total_discounts, 0) - COALESCE(a.total_adjustments, 0)) > 0) 
+                    THEN 'Yes' 
+                    ELSE 'No' 
+                END as "Current Payment-Plan Status"
             FROM customers c
-            LEFT JOIN account_financial_summary afs ON c.account_number = afs.account_number
+            LEFT JOIN (
+                SELECT account_number, SUM(amount_paid) as total_payments
+                FROM all_payments
+                WHERE account_number IN (
+                    SELECT account_number FROM customers 
+                    WHERE business_unit = ANY(:bus)
+                    AND officer_type = ANY(:otypes)
+                    AND account_officer = ANY(:onames)
+                )
+                GROUP BY account_number
+            ) p ON c.account_number = p.account_number
+            LEFT JOIN (
+                SELECT account_number, SUM(discounted_amount) as total_discounts
+                FROM discounts
+                WHERE (LOWER(status) = 'approved' OR LOWER(user_who_approved) LIKE '%okoye%' OR LOWER(user_who_approved) LIKE '%forstinus%')
+                AND account_number IN (
+                    SELECT account_number FROM customers 
+                    WHERE business_unit = ANY(:bus)
+                    AND officer_type = ANY(:otypes)
+                    AND account_officer = ANY(:onames)
+                )
+                GROUP BY account_number
+            ) d ON c.account_number = d.account_number
+            LEFT JOIN (
+                SELECT account_number, SUM(adjustment_amount) as total_adjustments
+                FROM adjustments
+                WHERE (LOWER(status) = 'approved' OR LOWER(user_who_approved_adjustment) LIKE '%okoye%' OR LOWER(user_who_approved_adjustment) LIKE '%forstinus%')
+                AND account_number IN (
+                    SELECT account_number FROM customers 
+                    WHERE business_unit = ANY(:bus)
+                    AND officer_type = ANY(:otypes)
+                    AND account_officer = ANY(:onames)
+                )
+                GROUP BY account_number
+            ) a ON c.account_number = a.account_number
+            LEFT JOIN (
+                SELECT DISTINCT ON (account_number) account_number, phone_number 
+                FROM validation 
+                WHERE account_number IN (
+                    SELECT account_number FROM customers 
+                    WHERE business_unit = ANY(:bus)
+                    AND officer_type = ANY(:otypes)
+                    AND account_officer = ANY(:onames)
+                )
+                ORDER BY account_number, id DESC
+            ) v_phone ON c.account_number = v_phone.account_number
+            LEFT JOIN (
+                SELECT account_number, MAX(date_of_payment) as last_payment_date 
+                FROM collections 
+                WHERE account_number IN (
+                    SELECT account_number FROM customers 
+                    WHERE business_unit = ANY(:bus)
+                    AND officer_type = ANY(:otypes)
+                    AND account_officer = ANY(:onames)
+                )
+                GROUP BY account_number
+            ) col_max ON c.account_number = col_max.account_number
             WHERE c.business_unit = ANY(:bus)
             AND c.officer_type = ANY(:otypes)
             AND c.account_officer = ANY(:onames)

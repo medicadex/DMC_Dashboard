@@ -353,6 +353,33 @@
         </div>
     </div>
 
+    <!-- ── Missing Staff Profiles Modal ── -->
+    <div id="missingStaffModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 10000; justify-content: center; align-items: center;">
+        <div class="section-card" style="width: 580px; max-width: 95%; background: var(--card-bg); border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); border: 1px solid var(--border-color); padding: 26px; margin-bottom: 0;">
+            <div style="display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border-color); padding-bottom: 14px; margin-bottom: 16px;">
+                <div style="width: 38px; height: 38px; border-radius: 8px; background: rgba(59,130,246,0.1); color: #3b82f6; display: flex; align-items: center; justify-content: center; font-size: 18px;">
+                    <i class="fas fa-id-card"></i>
+                </div>
+                <div>
+                    <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: var(--text-color);">Unmatched Recovery Officers Detected</h3>
+                    <p style="margin: 2px 0 0 0; font-size: 12px; color: var(--text-muted);">The following officers in this upload are not registered in the staff table. Please enter their Staff ID and Officer Type to proceed:</p>
+                </div>
+            </div>
+            
+            <form id="missingStaffForm">
+                <div id="missingStaffWrap" style="max-height: 280px; overflow-y: auto; margin-bottom: 20px; padding-right: 6px; display: flex; flex-direction: column; gap: 12px;">
+                    <!-- Dynamically populated cards -->
+                </div>
+                
+                <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+                    <button type="submit" class="btn-start" id="btnSaveMissingStaff" style="width: auto; margin-top: 0; padding: 10px 24px; font-weight: 600;">
+                        <i class="fas fa-check-circle"></i> Register Staff & Continue
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- ── Officer Change Dates Modal ── -->
     <div id="officerModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 9999; justify-content: center; align-items: center;">
         <div class="section-card" style="width: 500px; max-width: 90%; background: var(--card-bg); border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.25); border: 1px solid var(--border-color); padding: 24px; margin-bottom: 0;">
@@ -569,7 +596,172 @@ document.getElementById('btnStart').addEventListener('click', async () => {
             });
         }
 
-        // Check for officer changes in results
+        // 1. Check for unmatched officers without staff ID
+        let unmatchedOfficers = null;
+        if (data.results && data.results.length > 0) {
+            const customerResult = data.results.find(r => r.table === 'customers');
+            if (customerResult && customerResult.unmatched_officers && customerResult.unmatched_officers.length > 0) {
+                unmatchedOfficers = customerResult.unmatched_officers;
+            }
+        }
+
+        if (unmatchedOfficers && unmatchedOfficers.length > 0) {
+            logDivider();
+            log('⚠️  Unmatched Recovery Officers detected. Opening Staff ID registration modal...', 'log-warn');
+            logDivider();
+
+            const staffWrap = document.getElementById('missingStaffWrap');
+            staffWrap.innerHTML = '';
+
+            unmatchedOfficers.forEach(item => {
+                const card = document.createElement('div');
+                card.style.padding = '12px 14px';
+                card.style.background = 'rgba(0,0,0,0.03)';
+                card.style.border = '1px solid var(--border-color)';
+                card.style.borderRadius = '8px';
+                card.style.display = 'flex';
+                card.style.flexDirection = 'column';
+                card.style.gap = '8px';
+
+                const header = document.createElement('div');
+                header.style.display = 'flex';
+                header.style.justifyContent = 'space-between';
+                header.style.alignItems = 'center';
+
+                const title = document.createElement('span');
+                title.style.fontWeight = '700';
+                title.style.fontSize = '14px';
+                title.style.color = 'var(--text-color)';
+                title.textContent = item.officer_name;
+
+                const badge = document.createElement('span');
+                badge.style.fontSize = '11px';
+                badge.style.padding = '2px 8px';
+                badge.style.borderRadius = '12px';
+                badge.style.background = 'rgba(59,130,246,0.1)';
+                badge.style.color = '#3b82f6';
+                badge.style.fontWeight = '600';
+                badge.textContent = `${item.accounts_count.toLocaleString()} Accounts | ${item.business_unit || 'General'}`;
+
+                header.appendChild(title);
+                header.appendChild(badge);
+
+                const fieldsRow = document.createElement('div');
+                fieldsRow.style.display = 'grid';
+                fieldsRow.style.gridTemplateColumns = '1.5fr 1fr';
+                fieldsRow.style.gap = '10px';
+
+                // Staff ID input
+                const idCol = document.createElement('div');
+                const idLabel = document.createElement('label');
+                idLabel.style.fontSize = '11px';
+                idLabel.style.color = 'var(--text-muted)';
+                idLabel.style.fontWeight = '600';
+                idLabel.style.display = 'block';
+                idLabel.style.marginBottom = '3px';
+                idLabel.textContent = 'Staff ID *';
+                const idInput = document.createElement('input');
+                idInput.type = 'text';
+                idInput.required = true;
+                idInput.className = 'missing-staff-id-input';
+                idInput.placeholder = 'e.g. ETC1234 or IKD...';
+                idInput.style.padding = '7px 10px';
+                idInput.style.borderRadius = '6px';
+                idInput.style.border = '1px solid var(--border-color)';
+                idInput.style.background = 'var(--bg-color)';
+                idInput.style.color = 'var(--text-color)';
+                idInput.style.fontSize = '13px';
+                idInput.style.width = '100%';
+                idInput.dataset.officerName = item.officer_name;
+                idInput.dataset.businessUnit = item.business_unit || '';
+                idCol.appendChild(idLabel);
+                idCol.appendChild(idInput);
+
+                // Officer Type select
+                const typeCol = document.createElement('div');
+                const typeLabel = document.createElement('label');
+                typeLabel.style.fontSize = '11px';
+                typeLabel.style.color = 'var(--text-muted)';
+                typeLabel.style.fontWeight = '600';
+                typeLabel.style.display = 'block';
+                typeLabel.style.marginBottom = '3px';
+                typeLabel.textContent = 'Officer Type *';
+                const typeSelect = document.createElement('select');
+                typeSelect.className = 'missing-officer-type-select';
+                typeSelect.style.padding = '7px 10px';
+                typeSelect.style.borderRadius = '6px';
+                typeSelect.style.border = '1px solid var(--border-color)';
+                typeSelect.style.background = 'var(--bg-color)';
+                typeSelect.style.color = 'var(--text-color)';
+                typeSelect.style.fontSize = '13px';
+                typeSelect.style.width = '100%';
+                typeSelect.innerHTML = `
+                    <option value="DMO" selected>DMO</option>
+                    <option value="Vendor">Vendor</option>
+                `;
+                typeCol.appendChild(typeLabel);
+                typeCol.appendChild(typeSelect);
+
+                fieldsRow.appendChild(idCol);
+                fieldsRow.appendChild(typeCol);
+
+                card.appendChild(header);
+                card.appendChild(fieldsRow);
+                staffWrap.appendChild(card);
+            });
+
+            const staffModal = document.getElementById('missingStaffModal');
+            staffModal.style.display = 'flex';
+
+            await new Promise((resolve) => {
+                const staffForm = document.getElementById('missingStaffForm');
+                const saveBtn = document.getElementById('btnSaveMissingStaff');
+
+                staffForm.onsubmit = async (e) => {
+                    e.preventDefault();
+                    saveBtn.disabled = true;
+                    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Registering...';
+
+                    const officerPayload = [];
+                    const idInputs = document.querySelectorAll('.missing-staff-id-input');
+                    const typeSelects = document.querySelectorAll('.missing-officer-type-select');
+
+                    idInputs.forEach((inp, idx) => {
+                        officerPayload.push({
+                            officer_name: inp.dataset.officerName,
+                            staff_id: inp.value.trim(),
+                            business_unit: inp.dataset.businessUnit,
+                            officer_type: typeSelects[idx].value
+                        });
+                    });
+
+                    try {
+                        log('   ⏳ Registering staff and syncing customer accounts...', 'log-info');
+                        const res = await fetch('/api/staff/register-unmatched-officers', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ officers: officerPayload })
+                        });
+                        const resData = await res.json();
+                        if (resData.success) {
+                            log(`   ✅ ${resData.message}`, 'log-success');
+                        } else {
+                            log(`   ❌ Registration warning: ${resData.message}`, 'log-warn');
+                        }
+                    } catch (err) {
+                        log(`   ❌ Error registering staff: ${err.message}`, 'log-error');
+                    } finally {
+                        staffModal.style.display = 'none';
+                        staffForm.onsubmit = null;
+                        saveBtn.disabled = false;
+                        saveBtn.innerHTML = '<i class="fas fa-check-circle"></i> Register Staff & Continue';
+                        resolve();
+                    }
+                };
+            });
+        }
+
+        // 2. Check for officer changes in results
         let changes = null;
         if (data.results && data.results.length > 0) {
             const customerResult = data.results.find(r => r.table === 'customers');

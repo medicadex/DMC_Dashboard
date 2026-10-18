@@ -261,3 +261,110 @@ class AccountService:
                     
         return changes
 
+    def detect_unmatched_officers_in_df(self, df_uploaded):
+        """
+        Scans uploaded customer dataframe for account_officers who either:
+        1. Do not exist in the staff table at all, OR
+        2. Exist in the staff table but have an empty/null staff_id or officer_type.
+        Returns a list of dicts:
+        [
+            {
+                "officer_name": "Stanley Friday",
+                "business_unit": "IKORODU",
+                "accounts_count": 6328
+            },
+            ...
+        ]
+        """
+        import pandas as pd
+        if 'account_officer' not in df_uploaded.columns:
+            return []
+
+        # Extract unique account officers and their account counts and business unit
+        officer_data = {}
+        for _, row in df_uploaded.iterrows():
+            off = row.get('account_officer')
+            if pd.isnull(off):
+                continue
+            off_str = str(off).strip()
+            if not off_str or off_str.lower() in ('nan', 'none', 'null', ''):
+                continue
+            
+            bu = row.get('business_unit')
+            bu_str = str(bu).strip() if pd.notnull(bu) and str(bu).strip().lower() not in ('nan', 'none', 'null') else ''
+
+            if off_str not in officer_data:
+                officer_data[off_str] = {
+                    'accounts_count': 0,
+                    'business_units': {}
+                }
+            officer_data[off_str]['accounts_count'] += 1
+            if bu_str:
+                officer_data[off_str]['business_units'][bu_str] = officer_data[off_str]['business_units'].get(bu_str, 0) + 1
+
+        if not officer_data:
+            return []
+
+        def norm(s):
+            if not s: return ""
+            return " ".join(str(s).strip().lower().split())
+
+        staff_lookup = {}
+        try:
+            with self.engine.connect() as conn:
+                rows = conn.execute(text("""
+                    SELECT staff_id, first_name, surname, name_official, name_variant, officer_type, business_unit 
+                    FROM staff
+                """)).fetchall()
+
+                for r in rows:
+                    sid = str(r[0]).strip() if r[0] else ""
+                    fn = norm(r[1])
+                    sn = norm(r[2])
+                    no = norm(r[3])
+                    nv = norm(r[4])
+                    ot = str(r[5]).strip() if r[5] else ""
+                    bu = str(r[6]).strip() if r[6] else ""
+
+                    entry = {'staff_id': sid, 'officer_type': ot, 'business_unit': bu}
+                    if fn and sn:
+                        staff_lookup[f"{fn} {sn}"] = entry
+                        staff_lookup[f"{sn} {fn}"] = entry
+                    elif fn:
+                        staff_lookup[fn] = entry
+                    elif sn:
+                        staff_lookup[sn] = entry
+                    if no:
+                        staff_lookup[no] = entry
+                    if nv:
+                        staff_lookup[nv] = entry
+        except Exception as e:
+            import logging
+            logging.error(f"Error querying staff for matching: {e}")
+            return []
+
+        unmatched = []
+        for off_name, meta in officer_data.items():
+            norm_name = norm(off_name)
+            match = staff_lookup.get(norm_name)
+            if not match:
+                # Token subset matching
+                words = set(norm_name.split())
+                for cand_name, data in staff_lookup.items():
+                    cand_words = set(cand_name.split())
+                    if words and (words.issubset(cand_words) or cand_words.issubset(words)):
+                        match = data
+                        break
+
+            # If officer has no staff match or has no valid staff_id
+            if not match or not match.get('staff_id'):
+                bus = meta['business_units']
+                top_bu = max(bus.items(), key=lambda x: x[1])[0] if bus else ''
+                unmatched.append({
+                    'officer_name': off_name,
+                    'business_unit': top_bu,
+                    'accounts_count': meta['accounts_count']
+                })
+
+        return unmatched
+
